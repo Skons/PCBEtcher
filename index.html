@@ -413,7 +413,7 @@
     });
     $('build').onclick = () => build(false);
     $('viewToggle').onclick = () => toggleView();
-    $('mirror').onclick = () => { mirrored = !mirrored; $('mirror').classList.toggle('active', mirrored); build(false) };
+    $('mirror').onclick = () => { mirrored = !mirrored; $('mirror').classList.toggle('active', mirrored); if (showingSvg) { const svg = $('svgPreview').querySelector('svg'); if (svg) svg.style.transform = mirrored ? 'scaleX(-1)' : '' } build(false) };
     $('addHoleColor').onclick = () => { holeProfiles.push({ color: '#000000', diameter: '1' }); renderHolePalette(); build(true) };
     $('download').onclick = () => downloadSTL();
     $('downloadEtcher').onclick = () => downloadEtcherSTL();
@@ -485,6 +485,10 @@
       if (root.nodeName.toLowerCase() === 'parsererror') return;
       const svg = document.importNode(root, true); preview.appendChild(svg);
       removeHiddenSvgElements(svg);
+      // Keep the raw-SVG view in sync with the Mirror toggle. Without this, clicking
+      // Mirror only updates the 3D model in the background while "View original SVG"
+      // stays on screen unchanged, which looks exactly like the button doing nothing.
+      svg.style.transform = mirrored ? 'scaleX(-1)' : '';
     }
     function removeHiddenSvgElements(root) {
       Array.from(root.querySelectorAll('*')).forEach(el => {
@@ -899,7 +903,14 @@
       };
     }
     function mirrorModelData(data) {
-      const mirrorX = x => data.minX + data.W - (x - data.minX);
+      // Snapping to a fixed precision (1e-6mm, far finer than any PCB tolerance) keeps
+      // points that are meant to coincide - e.g. a pad center and a trace endpoint at the
+      // same spot - exactly equal after the mirror math. Without this, tiny floating-point
+      // drift between differently-computed coordinates (direct attribute reads vs.
+      // resampled curve points) can leave them a hair apart, which is enough to make
+      // polygon-clipping's union fail to close a ring on complex, densely-sampled boards.
+      const snap = v => Math.round(v * 1e6) / 1e6;
+      const mirrorX = x => snap(data.minX + data.W - (x - data.minX));
       const mirrorPoints = points => points.map(point => [mirrorX(point[0]), point[1]]).reverse();
       return {
         ...data,
@@ -1104,6 +1115,59 @@
       d.holes.forEach(hole => polygons.push(holePolygon({ ...hole, radius: hole.diameter / 2 })));
       return polygons.flatMap(points => clipToContour(points, contour));
     }
+    // All the vertices of the actual printed honeycomb/perimeter walls, used as candidate
+    // anchor points for connector struts below. Reusing the already-clipped wall polygons
+    // (rather than the raw, unclipped hex grid) guarantees every candidate point is real,
+    // present material.
+    function honeycombWallPoints(contour, cellSize, wallWidth) {
+      const points = [];
+      strokedPolygons([contour.concat([contour[0]])], wallWidth).forEach(poly => points.push(...poly));
+      honeycombPolygons(contour, cellSize, wallWidth).forEach(poly => points.push(...poly));
+      return points;
+    }
+    // Finds the closest (fromPoint, wallPoint) pair between two point sets.
+    function nearestPointPair(fromPoints, wallPoints) {
+      let best = null, bestDistSq = Infinity;
+      fromPoints.forEach(p => {
+        wallPoints.forEach(w => {
+          const dx = w[0] - p[0], dy = w[1] - p[1], distSq = dx * dx + dy * dy;
+          if (distSq < bestDistSq) { bestDistSq = distSq; best = [p, w]; }
+        });
+      });
+      return best;
+    }
+    // A short strut bridging a support feature to a wall point, rounded at both ends so it
+    // fuses cleanly with the circular joints already used elsewhere for traces.
+    function connectorPolygon(fromPoint, wallPoint, wallWidth, contour) {
+      const half = wallWidth / 2;
+      return [segmentQuad(fromPoint, wallPoint, half), jointCircle(fromPoint, half), jointCircle(wallPoint, half)]
+        .flatMap(points => clipToContour(points, contour));
+    }
+    // With honeycomb infill, a pad, through-hole or trace can land over an open cell instead
+    // of a wall, leaving its support post floating with nothing beneath it to hold it to the
+    // rest of the print. This connects every one of them to whichever wall point (perimeter
+    // or honeycomb) is nearest, so the whole etcher always prints as one connected piece.
+    // Each connector spans the full etcher thickness - the same height as the wall it joins -
+    // regardless of how shallow the recess it is anchoring may be.
+    function honeycombConnectors(contour, cellSize, wallWidth, circles, holes, lineLists) {
+      const wallPoints = honeycombWallPoints(contour, cellSize, wallWidth);
+      if (!wallPoints.length) return [];
+      const polygons = [];
+      circles.forEach(circle => {
+        const [from, to] = nearestPointPair([[circle.x, circle.y]], wallPoints);
+        polygons.push(...connectorPolygon(from, to, wallWidth, contour));
+      });
+      holes.forEach(hole => {
+        const [from, to] = nearestPointPair([[hole.x, hole.y]], wallPoints);
+        polygons.push(...connectorPolygon(from, to, wallWidth, contour));
+      });
+      lineLists.forEach(points => {
+        if (!points.length) return;
+        const [from, to] = nearestPointPair(points, wallPoints);
+        polygons.push(...connectorPolygon(from, to, wallWidth, contour));
+      });
+      return polygons;
+    }
     function etcherGeometries() {
       const d = modelGroup, etcherThick = +$('etcherThick').value, tolerance = +$('etcherTolerance').value;
       const cellSize = +$('etcherCell').value, wallWidth = +$('etcherWall').value;
@@ -1112,17 +1176,19 @@
       const contour = d.contour && d.contour.length >= 3 ? d.contour.map(point => [point[0] - ox, point[1] - oy]) : [[0, 0], [W, 0], [W, H], [0, H]];
       const geometries = [];
       strokedPolygons([contour.concat([contour[0]])], wallWidth).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
-      if (infillType() === 'honeycomb') {
-        honeycombPolygons(contour, cellSize, wallWidth).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
-      } else {
-        solidPolygons(contour).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
-      }
       const lineWidth = Math.max(0.01, d.lw - 2 * tolerance);
       const contactCircles = d.circles.map(circle => ({ x: circle.x - ox, y: circle.y - oy, radius: d.dia / 2 }));
+      const localHoles = d.holes.map(hole => ({ ...hole, x: hole.x - ox, y: hole.y - oy }));
       const lineLists = linePointLists(d.lines).map(points => points.map(point => [point[0] - ox, point[1] - oy]));
       const junctions = computeLineJunctions(lineLists, contactCircles, d.lw, tolerance);
       const extended = extendLineEnds(lineLists, junctions, 2 * tolerance);
-      supportPolygons(extended, junctions, contour, { ...d, circles: d.circles.map(circle => ({ ...circle, x: circle.x - ox, y: circle.y - oy })), holes: d.holes.map(hole => ({ ...hole, x: hole.x - ox, y: hole.y - oy })) }).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
+      if (infillType() === 'honeycomb') {
+        honeycombPolygons(contour, cellSize, wallWidth).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
+        honeycombConnectors(contour, cellSize, wallWidth, contactCircles, localHoles, extended).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
+      } else {
+        solidPolygons(contour).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
+      }
+      supportPolygons(extended, junctions, contour, { ...d, circles: contactCircles, holes: localHoles }).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
       if (d.ld > 0) {
         etcherLinePolygons(extended, lineWidth, junctions).forEach(points => geometries.push(extrudedPolygon(points, d.ld, etcherThick)));
       }

@@ -345,11 +345,15 @@
           <label><span>PCB</span><input type="radio" name="modelMode" value="pcb" checked></label>
           <label><span>Etcher</span><input type="radio" name="modelMode" value="etcher"></label>
         </fieldset>
+        <div>
+          <label>Extrude traces / circles on top<input id="extrudeOnTop" type="checkbox"></label>
+          <label>Mirror<input id="mirrorToggle" type="checkbox"></label>
+        </div>
         <div id="pcbSettings">
           <label>PCB width (cm) <input id="widthCm" type="number" value="0" min="0.01" step="0.01"></label>
           <label>PCB height (cm) <input id="heightCm" type="number" value="0" min="0.01" step="0.01"></label>
           <label>Total thickness (mm) <input id="thick" type="number" min="0.1" step="0.1"></label>
-          <label>Trace depth (mm) <input id="lineDepth" type="number" min="0" step="0.1"></label>
+          <label id="lineDepthLabel">Trace depth (mm) <input id="lineDepth" type="number" min="0" step="0.1"></label>
           <label>Trace width (mm) <input id="lineWidth" type="number" min="0.05" step="0.05"></label>
           <label>Circle depth (mm) <input id="circleDepth" type="number" min="0" step="0.1"></label>
           <label>Circle diameter (mm) <input id="circleDia" type="number" min="0.05" step="0.05"></label>
@@ -376,7 +380,6 @@
         <label>Arc segment resolution <input id="segments" type="number" value="48" min="12" max="128" step="4"></label>
         <button id="build">Refresh 3D</button>
         <button class="secondary" id="viewToggle">View original SVG</button>
-        <button class="secondary" id="mirror">Mirror</button>
         <button id="download">Download PCB STL</button>
         <button id="downloadEtcher" hidden>Download etcher STL</button>
         <button class="secondary" id="reset">Reset settings</button>
@@ -402,6 +405,7 @@
     const rebuild = debounce(() => build(true), 150);
     const params = ['thick', 'lineDepth', 'lineWidth', 'circleDepth', 'circleDia', 'segments'];
     params.forEach(id => $(id).addEventListener('input', rebuild));
+    $('extrudeOnTop').addEventListener('change', () => { updateExtrudeVisibility(); rebuild(); });
     ['etcherCell', 'etcherWall'].forEach(id => $(id).addEventListener('input', () => drawPreview()));
     function infillType() { return document.querySelector('input[name="infillType"]:checked').value; }
     function updateInfillVisibility() { $('honeycombSettings').hidden = infillType() !== 'honeycomb'; }
@@ -413,7 +417,11 @@
     });
     $('build').onclick = () => build(false);
     $('viewToggle').onclick = () => toggleView();
-    $('mirror').onclick = () => { mirrored = !mirrored; $('mirror').classList.toggle('active', mirrored); if (showingSvg) { const svg = $('svgPreview').querySelector('svg'); if (svg) svg.style.transform = mirrored ? 'scaleX(-1)' : '' } build(false) };
+    function applyMirrorState(e) {
+      mirrored = e.target.checked;
+      if (showingSvg) { const svg = $('svgPreview').querySelector('svg'); if (svg) svg.style.transform = mirrored ? 'scaleX(-1)' : '' } build(false);
+    }
+    $('mirrorToggle').addEventListener('change', applyMirrorState);
     $('addHoleColor').onclick = () => { holeProfiles.push({ color: '#000000', diameter: '1' }); renderHolePalette(); build(true) };
     $('download').onclick = () => downloadSTL();
     $('downloadEtcher').onclick = () => downloadEtcherSTL();
@@ -450,7 +458,22 @@
       $('etcherSettings').hidden = !etcher;
       $('download').hidden = etcher;
       $('downloadEtcher').hidden = !etcher;
+      updateExtrudeVisibility();
       drawPreview();
+    }
+
+    function updateExtrudeVisibility() {
+      const extrudeActive = !!$('extrudeOnTop').checked;
+      const label = $('lineDepthLabel');
+      if (label) {
+        const labelText = label.querySelector('span') || label.firstChild;
+        const textNode = labelText && labelText.nodeType === Node.TEXT_NODE ? labelText : null;
+        if (textNode) {
+          textNode.textContent = extrudeActive ? 'Trace height (mm) ' : 'Trace depth (mm) ';
+        } else if (labelText) {
+          labelText.textContent = extrudeActive ? 'Trace height (mm) ' : 'Trace depth (mm) ';
+        }
+      }
     }
 
     function updateDimension(changedId, otherId) {
@@ -611,29 +634,52 @@
         poly([bot[i], bot[j], top[j], top[i]], '#0e3b19');
       }
       poly(top, '#0e3b19', '#0e3b19');
-      // recessed circles
-      d.circles.forEach(c => {
-        drawCylinderPocket(c.x - ox - contourCenter[0], c.y - oy - contourCenter[1], d.dia / 2, d.t + 0.01, d.t - d.cd, cx, cy, sc, '#1c5a31', '#1c5a31');
-      });
-      // through holes
-      d.holes.forEach(h => {
-        const holePoints = holePolygon({ ...h, radius: h.diameter / 2 }), topRing = [], bottomRing = [];
-        holePoints.forEach(point => {
-          const x = point[0] - ox - contourCenter[0], y = point[1] - oy - contourCenter[1];
-          topRing.push(proj(x, y, d.t + 0.01, cx, cy, sc));
-          bottomRing.push(proj(x, y, 0.15, cx, cy, sc));
+      if (d.extrudeOnTop) {
+        const overlayHeight = Number.isFinite(d.extrudeHeight) ? d.extrudeHeight : Math.max(d.ld, d.cd, 0.1);
+        d.circles.forEach(c => {
+          drawCylinderPocket(c.x - ox - contourCenter[0], c.y - oy - contourCenter[1], d.dia / 2, d.t + overlayHeight + 0.01, d.t, cx, cy, sc, '#1c5a31', '#1c5a31');
         });
-        for (let i = 0; i < holePoints.length; i++) {
-          const j = (i + 1) % holePoints.length;
-          poly([topRing[i], topRing[j], bottomRing[j], bottomRing[i]], h.color);
-        }
-        poly(topRing, h.color);
-      });
-      // recessed line segments
-      lineSegments(d.lines, d.lw).forEach(seg => {
-        const p1 = proj(seg[0][0] - ox - contourCenter[0], seg[0][1] - oy - contourCenter[1], d.t - d.ld, cx, cy, sc), p2 = proj(seg[1][0] - ox - contourCenter[0], seg[1][1] - oy - contourCenter[1], d.t - d.ld, cx, cy, sc);
-        ctx.strokeStyle = '#1c5a31'; ctx.lineWidth = Math.max(2, d.lw * sc); ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
-      });
+        d.holes.forEach(h => {
+          const holePoints = holePolygon({ ...h, radius: h.diameter / 2 }), topRing = [], bottomRing = [];
+          holePoints.forEach(point => {
+            const x = point[0] - ox - contourCenter[0], y = point[1] - oy - contourCenter[1];
+            topRing.push(proj(x, y, d.t + 0.01, cx, cy, sc));
+            bottomRing.push(proj(x, y, 0.15, cx, cy, sc));
+          });
+          for (let i = 0; i < holePoints.length; i++) {
+            const j = (i + 1) % holePoints.length;
+            poly([topRing[i], topRing[j], bottomRing[j], bottomRing[i]], h.color);
+          }
+          poly(topRing, h.color);
+        });
+        if (d.ld > 0) lineSegments(d.lines, d.lw).forEach(seg => {
+          const p1 = proj(seg[0][0] - ox - contourCenter[0], seg[0][1] - oy - contourCenter[1], d.t + overlayHeight / 2, cx, cy, sc), p2 = proj(seg[1][0] - ox - contourCenter[0], seg[1][1] - oy - contourCenter[1], d.t + overlayHeight / 2, cx, cy, sc);
+          ctx.strokeStyle = '#1c5a31'; ctx.lineWidth = Math.max(2, d.lw * sc); ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+        });
+      } else {
+        d.circles.forEach(c => {
+          drawCylinderPocket(c.x - ox - contourCenter[0], c.y - oy - contourCenter[1], d.dia / 2, d.t + 0.01, d.t - d.cd, cx, cy, sc, '#1c5a31', '#1c5a31');
+        });
+        // through holes
+        d.holes.forEach(h => {
+          const holePoints = holePolygon({ ...h, radius: h.diameter / 2 }), topRing = [], bottomRing = [];
+          holePoints.forEach(point => {
+            const x = point[0] - ox - contourCenter[0], y = point[1] - oy - contourCenter[1];
+            topRing.push(proj(x, y, d.t + 0.01, cx, cy, sc));
+            bottomRing.push(proj(x, y, 0.15, cx, cy, sc));
+          });
+          for (let i = 0; i < holePoints.length; i++) {
+            const j = (i + 1) % holePoints.length;
+            poly([topRing[i], topRing[j], bottomRing[j], bottomRing[i]], h.color);
+          }
+          poly(topRing, h.color);
+        });
+        // recessed line segments
+        lineSegments(d.lines, d.lw).forEach(seg => {
+          const p1 = proj(seg[0][0] - ox - contourCenter[0], seg[0][1] - oy - contourCenter[1], d.t - d.ld, cx, cy, sc), p2 = proj(seg[1][0] - ox - contourCenter[0], seg[1][1] - oy - contourCenter[1], d.t - d.ld, cx, cy, sc);
+          ctx.strokeStyle = '#1c5a31'; ctx.lineWidth = Math.max(2, d.lw * sc); ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+        });
+      }
       ctx.fillStyle = '#444'; ctx.font = `${13 * devicePixelRatio}px system-ui`; ctx.fillText('3D preview — drag to rotate, Shift-drag to move', 20, 30);
       drawViewCube();
     }
@@ -653,7 +699,7 @@
         solidPolygons(contour).forEach(points => poly(project(points), '#c7ccce', '#7c858b'));
       }
       const tolerance = Math.max(0, +$('etcherTolerance').value || 0);
-      if (d.ld > 0) {
+      if (!d.extrudeOnTop && d.ld > 0) {
         ctx.strokeStyle = '#1769aa'; ctx.lineWidth = Math.max(2, (d.lw - 2 * tolerance) * sc); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         const contactCircles = d.circles.map(circle => ({ x: circle.x, y: circle.y, radius: d.dia / 2 }));
         const lineLists = linePointLists(d.lines);
@@ -662,6 +708,17 @@
         lineSegments(etcherLines, d.lw - 2 * tolerance).forEach(segment => {
           const points = project(segment); ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]); ctx.lineTo(points[1][0], points[1][1]); ctx.stroke();
         });
+      }
+      if (d.extrudeOnTop && Number.isFinite(d.extrudeHeight) && d.extrudeHeight > 0) {
+        const contactCircles = d.circles.map(circle => ({ x: circle.x, y: circle.y, radius: d.dia / 2 }));
+        const lineLists = linePointLists(d.lines);
+        const junctions = computeLineJunctions(lineLists, contactCircles, d.lw, tolerance);
+        const overlayLines = extendLineEnds(lineLists, junctions, 2 * tolerance);
+        ctx.strokeStyle = '#ffb000'; ctx.lineWidth = Math.max(2, (d.lw + 2 * tolerance) * sc); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        lineSegments(overlayLines, d.lw + 2 * tolerance).forEach(segment => {
+          const points = project(segment); ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]); ctx.lineTo(points[1][0], points[1][1]); ctx.stroke();
+        });
+        d.circles.forEach(circle => poly(project(circlePolygon({ x: circle.x - ox, y: circle.y - oy, radius: Math.max(0.005, d.dia / 2 + tolerance) })), '#ffb000', '#9a6900'));
       }
       if (d.cd > 0) d.circles.forEach(circle => poly(project(circlePolygon({ x: circle.x - ox, y: circle.y - oy, radius: Math.max(0.005, d.dia / 2 - tolerance) })), '#1769aa', '#0f4e7c'));
       d.holes.forEach(hole => poly(project(holePolygon({ ...hole, x: hole.x - ox, y: hole.y - oy, radius: Math.max(0.005, hole.diameter / 2 - tolerance) })), hole.color));
@@ -959,6 +1016,14 @@
       result.forEach(polygon => { if (polygon[0] && polygon[0].length >= 3) out.push(polygon[0]) });
       return out;
     }
+    function polygonShape(points, originX, originY) {
+      const shape = new THREE.Shape();
+      if (!points || !points.length) return shape;
+      shape.moveTo(points[0][0] - originX, points[0][1] - originY);
+      points.slice(1).forEach(point => shape.lineTo(point[0] - originX, point[1] - originY));
+      shape.closePath();
+      return shape;
+    }
     function makeShape(contour, holes, circles, linePolygons, originX, originY, includeRecesses) {
       const shape = new THREE.Shape(); shape.moveTo(contour[0][0], contour[0][1]);
       contour.slice(1).forEach(p => shape.lineTo(p[0], p[1])); shape.closePath();
@@ -975,16 +1040,23 @@
       const requestedHeight = +$('heightCm').value;
       if (Number.isFinite(requestedWidth) && requestedWidth > 0 && Number.isFinite(requestedHeight) && requestedHeight > 0 && d.physicalBoardWmm > 0 && d.physicalBoardHmm > 0) d = scaleModelData(d, requestedWidth * 10 / d.physicalBoardWmm, requestedHeight * 10 / d.physicalBoardHmm);
       if (mirrored) d = mirrorModelData(d);
-      const t = +$('thick').value, ld = Math.min(+$('lineDepth').value, t), cd = Math.min(+$('circleDepth').value, t);
+      const t = +$('thick').value, ld = Math.min(+$('lineDepth').value, t), cd = Math.min(+$('circleDepth').value, t), extraHeight = Math.max(0.01, +$('lineDepth').value || 0.5);
       const dia = +$('circleDia').value, lw = +$('lineWidth').value, seg = +$('segments').value, ox = d.minX || 0, oy = d.minY || 0;
       const contour = d.contour && d.contour.length >= 3 ? d.contour.map(p => [p[0] - ox, p[1] - oy]) : [[0, 0], [d.W, 0], [d.W, d.H], [0, d.H]];
       const throughHoles = d.holes.map(h => ({ ...h, radius: h.diameter / 2 }));
+      const extrudeOnTop = !!$('extrudeOnTop').checked;
       // Each circle in the trace color becomes a recessed circle, even when a through-hole
       // is at the same location (a pad often has both a shallow round pocket and a hole).
       // Previously, those pockets were incorrectly skipped when a hole overlapped, leaving
       // exactly the pads connected to a trace without a clean circular recess.
       const recessCircles = d.circles.map(c => ({ x: c.x, y: c.y, radius: dia / 2 }));
       const linePolygons = strokedPolygons(d.lines, lw);
+      if (extrudeOnTop) {
+        const layers = [{ z: 0, depth: t, height: t, shape: makeShape(contour, throughHoles, [], [], ox, oy, false) }];
+        if (linePolygons.length) linePolygons.forEach(points => layers.push({ z: t, depth: extraHeight, height: extraHeight, shape: polygonShape(points, ox, oy) }));
+        if (d.circles.length) d.circles.forEach(circle => { const points = circlePolygon({ x: circle.x, y: circle.y, radius: dia / 2 }); layers.push({ z: t, depth: extraHeight, height: extraHeight, shape: polygonShape(points, ox, oy) }); });
+        return { ...d, t, ld, cd, dia, lw, seg, W: d.W, H: d.H, extrudeOnTop, extrudeHeight: extraHeight, layers };
+      }
       const levels = [...new Set([0, t, ...(ld > 0 && ld < t ? [t - ld] : []), ...(cd > 0 && cd < t ? [t - cd] : [])])];
       levels.sort((a, b) => a - b);
       const layers = [];
@@ -994,7 +1066,7 @@
         const activeLines = depth <= ld + 0.0001 ? linePolygons : [];
         layers.push({ z, depth, height: levels[i + 1] - z, shape: makeShape(contour, throughHoles, activeCircles, activeLines, ox, oy, true) });
       }
-      return { ...d, t, ld, cd, dia, lw, seg, W: d.W, H: d.H, layers };
+      return { ...d, t, ld, cd, dia, lw, seg, W: d.W, H: d.H, extrudeOnTop, extrudeHeight: extraHeight, layers };
     }
     function build(silent) {
       if (!svgText) { if (!silent) $('status').textContent = 'Please load an SVG file first.'; return }
@@ -1008,6 +1080,19 @@
     function extrudedPolygon(points, depth, z) {
       const shape = new THREE.Shape(); shape.moveTo(points[0][0], points[0][1]);
       points.slice(1).forEach(point => shape.lineTo(point[0], point[1])); shape.closePath();
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: modelGroup.seg });
+      geometry.translate(0, 0, z); return geometry;
+    }
+    // Same as extrudedPolygon, but the outer ring may have inner rings cut out of it (used
+    // to carve a pocket into an etcher base polygon rather than adding a colliding plug).
+    function extrudedPolygonWithHoles(rings, depth, z) {
+      const shape = new THREE.Shape(); shape.moveTo(rings[0][0][0], rings[0][0][1]);
+      rings[0].slice(1).forEach(point => shape.lineTo(point[0], point[1])); shape.closePath();
+      rings.slice(1).forEach(hole => {
+        const path = new THREE.Path(); path.moveTo(hole[0][0], hole[0][1]);
+        hole.slice(1).forEach(point => path.lineTo(point[0], point[1])); path.closePath();
+        shape.holes.push(path);
+      });
       const geometry = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: modelGroup.seg });
       geometry.translate(0, 0, z); return geometry;
     }
@@ -1175,25 +1260,61 @@
       const ox = d.minX || 0, oy = d.minY || 0, W = d.W, H = d.H;
       const contour = d.contour && d.contour.length >= 3 ? d.contour.map(point => [point[0] - ox, point[1] - oy]) : [[0, 0], [W, 0], [W, H], [0, H]];
       const geometries = [];
-      strokedPolygons([contour.concat([contour[0]])], wallWidth).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
       const lineWidth = Math.max(0.01, d.lw - 2 * tolerance);
       const contactCircles = d.circles.map(circle => ({ x: circle.x - ox, y: circle.y - oy, radius: d.dia / 2 }));
       const localHoles = d.holes.map(hole => ({ ...hole, x: hole.x - ox, y: hole.y - oy }));
       const lineLists = linePointLists(d.lines).map(points => points.map(point => [point[0] - ox, point[1] - oy]));
       const junctions = computeLineJunctions(lineLists, contactCircles, d.lw, tolerance);
       const extended = extendLineEnds(lineLists, junctions, 2 * tolerance);
+      // Every solid part of the etcher block itself (perimeter, infill, support struts),
+      // collected as flat polygons instead of extruded right away, so "extrude on top" mode
+      // below can cut a pocket into just their top slice instead of extruding immediately.
+      const basePolygons = strokedPolygons([contour.concat([contour[0]])], wallWidth);
       if (infillType() === 'honeycomb') {
-        honeycombPolygons(contour, cellSize, wallWidth).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
-        honeycombConnectors(contour, cellSize, wallWidth, contactCircles, localHoles, extended).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
+        basePolygons.push(...honeycombPolygons(contour, cellSize, wallWidth));
+        basePolygons.push(...honeycombConnectors(contour, cellSize, wallWidth, contactCircles, localHoles, extended));
       } else {
-        solidPolygons(contour).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
+        basePolygons.push(...solidPolygons(contour));
       }
-      supportPolygons(extended, junctions, contour, { ...d, circles: contactCircles, holes: localHoles }).forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
-      if (d.ld > 0) {
-        etcherLinePolygons(extended, lineWidth, junctions).forEach(points => geometries.push(extrudedPolygon(points, d.ld, etcherThick)));
+      basePolygons.push(...supportPolygons(extended, junctions, contour, { ...d, circles: contactCircles, holes: localHoles }));
+      if (d.extrudeOnTop && Number.isFinite(d.extrudeHeight) && d.extrudeHeight > 0) {
+        // The PCB's traces/circles stick up above its surface in this mode, so instead of
+        // adding a matching plug on top of the etcher (which would collide with them), carve
+        // a pocket into the etcher's top surface, sized a bit larger so it drops down over them.
+        const overlayWidth = Math.max(0.01, d.lw + 2 * tolerance);
+        const overlayContactCircles = d.circles.map(circle => ({ x: circle.x - ox, y: circle.y - oy, radius: d.dia / 2 + tolerance }));
+        const overlayLineLists = linePointLists(d.lines).map(points => points.map(point => [point[0] - ox, point[1] - oy]));
+        const overlayJunctions = computeLineJunctions(overlayLineLists, overlayContactCircles, overlayWidth, tolerance);
+        const overlayExtended = extendLineEnds(overlayLineLists, overlayJunctions, 2 * tolerance);
+        // Merge the individual (often overlapping/tangent) trace and circle footprints into
+        // clean, non-self-intersecting rings first - feeding polygon-clipping's difference
+        // with overlapping input rings directly is what makes its sweep-line choke on
+        // near-duplicate points.
+        const overlayCircles = d.circles.map(circle => ({ x: circle.x - ox, y: circle.y - oy, radius: Math.max(0.005, d.dia / 2 + tolerance) }));
+        const pocketPolygons = unionCutouts(overlayCircles, etcherLinePolygons(overlayExtended, overlayWidth, overlayJunctions));
+        const pocketDepth = Math.min(d.extrudeHeight, etcherThick), baseHeight = etcherThick - pocketDepth;
+        basePolygons.forEach(points => {
+          if (baseHeight > 0) geometries.push(extrudedPolygon(points, baseHeight, 0));
+          if (!pocketPolygons.length) { geometries.push(extrudedPolygon(points, pocketDepth, baseHeight)); return }
+          try {
+            const cut = polygonClipping.difference([closeRing(points)], ...pocketPolygons.map(hole => [closeRing(hole)]));
+            cut.forEach(rings => { if (rings[0] && rings[0].length >= 3) geometries.push(extrudedPolygonWithHoles(rings, pocketDepth, baseHeight)) });
+          } catch (e) {
+            // A pocket that a piece of base geometry can't be cleanly cut against (rare
+            // sweep-line precision failure) shouldn't block the whole export - keep that
+            // piece solid instead of losing it.
+            console.warn('Etcher pocket cut failed for one base piece, keeping it solid:', e);
+            geometries.push(extrudedPolygon(points, pocketDepth, baseHeight));
+          }
+        });
+      } else {
+        if (d.ld > 0) {
+          etcherLinePolygons(extended, lineWidth, junctions).forEach(points => geometries.push(extrudedPolygon(points, d.ld, etcherThick)));
+        }
+        basePolygons.forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
+        const circleRadius = Math.max(0.005, d.dia / 2 - tolerance);
+        if (d.cd > 0) d.circles.forEach(circle => geometries.push(extrudedPolygon(circlePolygon({ x: circle.x - ox, y: circle.y - oy, radius: circleRadius }), d.cd, etcherThick)));
       }
-      const circleRadius = Math.max(0.005, d.dia / 2 - tolerance);
-      if (d.cd > 0) d.circles.forEach(circle => geometries.push(extrudedPolygon(circlePolygon({ x: circle.x - ox, y: circle.y - oy, radius: circleRadius }), d.cd, etcherThick)));
       d.holes.forEach(hole => {
         const holeRadius = Math.max(0.005, hole.diameter / 2 - tolerance);
         geometries.push(extrudedPolygon(holePolygon({ ...hole, x: hole.x - ox, y: hole.y - oy, radius: holeRadius }), d.t, etcherThick));
@@ -1248,26 +1369,37 @@
       try {
         const activeLayers = modelGroup.layers.filter(layer => layer.height > 0);
         let geometries;
-        try {
-          $('status').textContent = 'Fusing layers into a solid model…';
-          const wasm = await window.manifoldReady;
-          const { Manifold, CrossSection } = wasm;
-          const layerManifolds = activeLayers.map(layer => shapeToManifold(CrossSection, layer.shape, layer.height, layer.z, modelGroup.seg));
-          const unioned = Manifold.union(layerManifolds);
-          geometries = [manifoldToGeometry(unioned)];
-          layerManifolds.forEach(m => m.delete());
-          unioned.delete();
-        } catch (mergeError) {
-          // The stacked layers are still individually valid solids on their own — if the
-          // union step is unavailable (e.g. offline, CDN blocked) fall back to exporting
-          // them unmerged rather than blocking the download. The file will just have the
-          // touching-layer seams again (may show as non-manifold edges in a slicer).
-          console.warn('Solid union unavailable, exporting stacked layers instead:', mergeError);
+        if (modelGroup.extrudeOnTop) {
+          // Overlay mode stacks multiple positive layers on top of the base plate. These can
+          // overlap the same top face and trigger invalid unions in the manifold kernel,
+          // so export them as independent valid solids instead of forcing a risky merge.
           geometries = activeLayers.map(layer => {
             const geometry = new THREE.ExtrudeGeometry(layer.shape, { depth: layer.height, bevelEnabled: false, curveSegments: modelGroup.seg });
             geometry.translate(0, 0, layer.z);
             return geometry;
           });
+        } else {
+          try {
+            $('status').textContent = 'Fusing layers into a solid model…';
+            const wasm = await window.manifoldReady;
+            const { Manifold, CrossSection } = wasm;
+            const layerManifolds = activeLayers.map(layer => shapeToManifold(CrossSection, layer.shape, layer.height, layer.z, modelGroup.seg));
+            const unioned = Manifold.union(layerManifolds);
+            geometries = [manifoldToGeometry(unioned)];
+            layerManifolds.forEach(m => m.delete());
+            unioned.delete();
+          } catch (mergeError) {
+            // The stacked layers are still individually valid solids on their own — if the
+            // union step is unavailable (e.g. offline, CDN blocked) fall back to exporting
+            // them unmerged rather than blocking the download. The file will just have the
+            // touching-layer seams again (may show as non-manifold edges in a slicer).
+            console.warn('Solid union unavailable, exporting stacked layers instead:', mergeError);
+            geometries = activeLayers.map(layer => {
+              const geometry = new THREE.ExtrudeGeometry(layer.shape, { depth: layer.height, bevelEnabled: false, curveSegments: modelGroup.seg });
+              geometry.translate(0, 0, layer.z);
+              return geometry;
+            });
+          }
         }
         geometries.forEach(geometry => { geometry.scale(1, -1, 1); geometry.translate(0, modelGroup.H, 0) });
         downloadGeometries(geometries, 'pcb.stl', 'pcb');

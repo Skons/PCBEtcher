@@ -355,7 +355,7 @@
           <label>Total thickness (mm) <input id="thick" type="number" min="0.1" step="0.1"></label>
           <label id="lineDepthLabel">Trace depth (mm) <input id="lineDepth" type="number" min="0" step="0.1"></label>
           <label>Trace width (mm) <input id="lineWidth" type="number" min="0.05" step="0.05"></label>
-          <label>Circle depth (mm) <input id="circleDepth" type="number" min="0" step="0.1"></label>
+          <label id="circleDepthLabel">Circle depth (mm) <input id="circleDepth" type="number" min="0" step="0.1"></label>
           <label>Circle diameter (mm) <input id="circleDia" type="number" min="0.05" step="0.05"></label>
         </div>
         <div id="etcherSettings" hidden>
@@ -368,9 +368,8 @@
           <label>Etcher tolerance (mm) <input id="etcherTolerance" type="number" min="0" step="0.01"
               value="0.1"></label>
           <div id="honeycombSettings">
-            <label>Honeycomb cell size (mm) <input id="etcherCell" type="number" min="2" step="0.5" value="8"></label>
-            <label>Honeycomb wall width (mm) <input id="etcherWall" type="number" min="0.4" step="0.1"
-                value="1"></label>
+            <label>Honeycomb cell size (mm) <input id="etcherCell" type="number" min="2" step="0.5" value="3"></label>
+            <label>Honeycomb wall width (mm) <input id="etcherWall" type="number" min="0.4" step="0.1" value="0.7"></label>
           </div>
         </div>
       </section>
@@ -397,7 +396,7 @@
     const $ = id => document.getElementById(id);
     const modelDefaults = { thick: '1', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', circleDia: '2', segments: '24' };
     let holeProfiles = [{ color: '#000000', diameter: '1' }];
-    const etcherDefaults = { etcherThick: '1', etcherTolerance: '0.1', etcherCell: '8', etcherWall: '1' };
+    const etcherDefaults = { etcherThick: '1', etcherTolerance: '0.1', etcherCell: '3', etcherWall: '0.7' };
     Object.entries({ ...modelDefaults, ...etcherDefaults }).forEach(([id, value]) => $(id).value = value);
     // Debounce so typing/spinning a number field doesn't trigger a full SVG-to-geometry
     // rebuild (parsing + polygon boolean ops) on every single keystroke.
@@ -464,16 +463,17 @@
 
     function updateExtrudeVisibility() {
       const extrudeActive = !!$('extrudeOnTop').checked;
-      const label = $('lineDepthLabel');
-      if (label) {
+      [['lineDepthLabel', 'Trace'], ['circleDepthLabel', 'Circle']].forEach(([id, feature]) => {
+        const label = $(id);
+        if (!label) return;
         const labelText = label.querySelector('span') || label.firstChild;
         const textNode = labelText && labelText.nodeType === Node.TEXT_NODE ? labelText : null;
         if (textNode) {
-          textNode.textContent = extrudeActive ? 'Trace height (mm) ' : 'Trace depth (mm) ';
+          textNode.textContent = `${feature} ${extrudeActive ? 'height' : 'depth'} (mm) `;
         } else if (labelText) {
-          labelText.textContent = extrudeActive ? 'Trace height (mm) ' : 'Trace depth (mm) ';
+          labelText.textContent = `${feature} ${extrudeActive ? 'height' : 'depth'} (mm) `;
         }
-      }
+      });
     }
 
     function updateDimension(changedId, otherId) {
@@ -1016,12 +1016,77 @@
       result.forEach(polygon => { if (polygon[0] && polygon[0].length >= 3) out.push(polygon[0]) });
       return out;
     }
+    // Handing polygon-clipping's union thousands of tiny pieces in one call keeps far more
+    // edges "active" in its sweep line at once than a real board's floating-point precision
+    // can support, which is what makes it lose track of a shared edge. Folding them in over
+    // small batches instead keeps each individual union call - and so the sweep line - small,
+    // which is far more resilient in practice, at the cost of doing many cheap unions instead
+    // of one huge one.
+    function unionInBatches(polygons, batchSize = 150) {
+      let acc = [];
+      for (let i = 0; i < polygons.length; i += batchSize) {
+        acc = polygonClipping.union(...acc.map(rings => rings), ...polygons.slice(i, i + batchSize));
+      }
+      return acc.filter(polygon => polygon[0] && polygon[0].length >= 3);
+    }
+    function ringArea(ring) {
+      let a = 0;
+      for (let i = 0; i < ring.length; i++) { const j = (i + 1) % ring.length; a += ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1] }
+      return Math.abs(a) / 2;
+    }
+    function polygonArea(rings) {
+      return rings.slice(1).reduce((area, hole) => area - ringArea(hole), ringArea(rings[0]));
+    }
+    // etcherLayers() can produce thousands of individually-correct pieces (one per trace
+    // segment/joint/support strut) for a real board - fusing that many separate solids with
+    // manifold-3d afterwards is slow enough to hang or crash the tab. This groups layers
+    // that occupy the exact same z-range and flattens each group into a handful of merged
+    // shapes first, purely as an export-time optimization - the shapes themselves already
+    // have their pockets/holes cut correctly, so this only reduces piece count, it doesn't
+    // change what's cut where.
+    function groupLayersForUnion(layers) {
+      const groups = new Map();
+      layers.forEach(layer => {
+        const key = layer.z.toFixed(6) + '|' + layer.height.toFixed(6);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(layer);
+      });
+      const merged = [];
+      groups.forEach(group => {
+        if (group.length <= 1) { merged.push(group[0]); return }
+        try {
+          const rings = group.map(layer => [closeRing(layer.shape.getPoints().map(p => [p.x, p.y])), ...layer.shape.holes.map(h => closeRing(h.getPoints().map(p => [p.x, p.y])))]);
+          const mergedPolygons = unionInBatches(rings);
+          // A big union like this can silently drop or misclassify area (e.g. solid wall
+          // material ending up counted as a hole) without throwing at all, especially once
+          // the input pieces already carry their own holes from the pocket-cutting step -
+          // comparing total area before/after catches that and falls back the same way a
+          // thrown error would, instead of shipping a corrupted merged shape.
+          const inputArea = rings.reduce((sum, ring) => sum + polygonArea(ring), 0);
+          const mergedArea = mergedPolygons.reduce((sum, polygon) => sum + polygonArea(polygon), 0);
+          if (Math.abs(mergedArea - inputArea) > Math.max(0.01, inputArea * 0.01)) throw new Error(`Merged area ${mergedArea.toFixed(3)} does not match input area ${inputArea.toFixed(3)}`);
+          mergedPolygons.forEach(mergedRings => merged.push(polygonWithHolesLayer(mergedRings, group[0].height, group[0].z)));
+        } catch (e) {
+          console.warn('Grouping etcher layers for export failed, keeping them separate:', e);
+          merged.push(...group);
+        }
+      });
+      return merged;
+    }
     function polygonShape(points, originX, originY) {
       const shape = new THREE.Shape();
       if (!points || !points.length) return shape;
       shape.moveTo(points[0][0] - originX, points[0][1] - originY);
       points.slice(1).forEach(point => shape.lineTo(point[0] - originX, point[1] - originY));
       shape.closePath();
+      return shape;
+    }
+    function polygonWithHolesShape(rings, originX, originY) {
+      const shape = polygonShape(rings[0], originX, originY);
+      rings.slice(1).forEach(hole => {
+        const path = new THREE.Path(); path.moveTo(hole[0][0] - originX, hole[0][1] - originY);
+        hole.slice(1).forEach(point => path.lineTo(point[0] - originX, point[1] - originY)); path.closePath(); shape.holes.push(path);
+      });
       return shape;
     }
     function makeShape(contour, holes, circles, linePolygons, originX, originY, includeRecesses) {
@@ -1052,9 +1117,17 @@
       const recessCircles = d.circles.map(c => ({ x: c.x, y: c.y, radius: dia / 2 }));
       const linePolygons = strokedPolygons(d.lines, lw);
       if (extrudeOnTop) {
+        const throughHolePolygons = throughHoles.map(hole => holePolygon(hole));
+        const throughHoleBounds = throughHolePolygons.map(ringBounds);
+        const overlayLayers = points => {
+          const bounds = ringBounds(points);
+          const nearbyHoles = throughHolePolygons.filter((hole, index) => boundsOverlap(bounds, throughHoleBounds[index]));
+          const cut = nearbyHoles.length ? polygonClipping.difference([closeRing(points)], ...nearbyHoles.map(hole => [closeRing(hole)])) : [[closeRing(points)]];
+          return cut.filter(rings => rings[0] && rings[0].length >= 3).map(rings => ({ z: t, depth: extraHeight, height: extraHeight, shape: polygonWithHolesShape(rings, ox, oy) }));
+        };
         const layers = [{ z: 0, depth: t, height: t, shape: makeShape(contour, throughHoles, [], [], ox, oy, false) }];
-        if (linePolygons.length) linePolygons.forEach(points => layers.push({ z: t, depth: extraHeight, height: extraHeight, shape: polygonShape(points, ox, oy) }));
-        if (d.circles.length) d.circles.forEach(circle => { const points = circlePolygon({ x: circle.x, y: circle.y, radius: dia / 2 }); layers.push({ z: t, depth: extraHeight, height: extraHeight, shape: polygonShape(points, ox, oy) }); });
+        if (linePolygons.length) linePolygons.forEach(points => layers.push(...overlayLayers(points)));
+        if (d.circles.length) d.circles.forEach(circle => { const points = circlePolygon({ x: circle.x, y: circle.y, radius: dia / 2 }); layers.push(...overlayLayers(points)); });
         return { ...d, t, ld, cd, dia, lw, seg, W: d.W, H: d.H, extrudeOnTop, extrudeHeight: extraHeight, layers };
       }
       const levels = [...new Set([0, t, ...(ld > 0 && ld < t ? [t - ld] : []), ...(cd > 0 && cd < t ? [t - cd] : [])])];
@@ -1077,24 +1150,21 @@
       $('status').textContent = 'SVG processed. The preview works directly in the browser. Drag to rotate; Shift-drag to move.';
     }
 
-    function extrudedPolygon(points, depth, z) {
+    // Build a shape and return it as a {shape, height, z} descriptor instead of an
+    // already-extruded THREE geometry, so the caller can either extrude it directly
+    // (fallback) or feed it into manifold-3d for a real boolean union (see
+    // downloadEtcherSTL). The etcher is built from many separate touching/overlapping
+    // pieces (base slab, honeycomb walls, support struts, pocket cutouts, ...); exporting
+    // them as-is leaves duplicate overlapping faces where they touch - a non-manifold mesh
+    // that most slicers flag or mishandle. Fusing them into one solid before export removes
+    // those internal faces.
+    function polygonLayer(points, depth, z) {
       const shape = new THREE.Shape(); shape.moveTo(points[0][0], points[0][1]);
       points.slice(1).forEach(point => shape.lineTo(point[0], point[1])); shape.closePath();
-      const geometry = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: modelGroup.seg });
-      geometry.translate(0, 0, z); return geometry;
+      return { shape, height: depth, z };
     }
-    // Same as extrudedPolygon, but the outer ring may have inner rings cut out of it (used
-    // to carve a pocket into an etcher base polygon rather than adding a colliding plug).
-    function extrudedPolygonWithHoles(rings, depth, z) {
-      const shape = new THREE.Shape(); shape.moveTo(rings[0][0][0], rings[0][0][1]);
-      rings[0].slice(1).forEach(point => shape.lineTo(point[0], point[1])); shape.closePath();
-      rings.slice(1).forEach(hole => {
-        const path = new THREE.Path(); path.moveTo(hole[0][0], hole[0][1]);
-        hole.slice(1).forEach(point => path.lineTo(point[0], point[1])); path.closePath();
-        shape.holes.push(path);
-      });
-      const geometry = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: modelGroup.seg });
-      geometry.translate(0, 0, z); return geometry;
+    function polygonWithHolesLayer(rings, depth, z) {
+      return { shape: polygonWithHolesShape(rings, 0, 0), height: depth, z };
     }
     function pointSegmentDistance(p, a, b) {
       const dx = b[0] - a[0], dy = b[1] - a[1], lenSq = dx * dx + dy * dy;
@@ -1161,19 +1231,63 @@
       });
       return polygons.filter(points => points.length >= 3);
     }
+    // Snapping to a fixed precision (1e-6mm, far finer than any PCB tolerance) keeps points
+    // that are meant to coincide - e.g. two touching quads/circles built from separately
+    // computed geometry - exactly equal. Without this, tiny floating-point drift (visible
+    // as differences around the 12th decimal) is enough to make polygon-clipping's
+    // sweep-line lose track of a shared edge, especially once many small pieces are fed
+    // into a single union/difference call.
+    const snapCoord = v => Math.round(v * 1e6) / 1e6;
+    const snapPoints = points => points.map(p => [snapCoord(p[0]), snapCoord(p[1])]);
     // A closed ring (first point repeated at the end) is required for polygon-clipping
     // to evaluate the boundary edge correctly; without it, shapes whose points happen to
     // land exactly on (or fall just past, due to floating point) the last-to-first closing
     // edge can be misclassified as inside, letting slivers poke past the outer edge.
     function closeRing(points) {
       if (!points.length) return points;
+      points = snapPoints(points);
       const first = points[0], last = points[points.length - 1];
       return (first[0] === last[0] && first[1] === last[1]) ? points : points.concat([first]);
     }
     function clipToContour(points, contour) {
+      // Intersecting every tiny honeycomb/support piece against the full contour ring is by
+      // far the most expensive part of building the etcher for boards with a detailed
+      // (many-point, e.g. curve-sampled) outline - with thousands of small pieces this adds
+      // up to minutes. Most pieces sit well inside the board, nowhere near its edge, and so
+      // can never actually be clipped by it: if the piece's center is farther from every
+      // contour edge than the piece itself reaches from its center, the whole piece is
+      // guaranteed to be entirely inside or entirely outside, decided by a single cheap
+      // point-in-polygon check instead of a full polygon boolean op.
+      let cx = 0, cy = 0;
+      points.forEach(p => { cx += p[0]; cy += p[1] });
+      cx /= points.length; cy /= points.length;
+      let reach = 0;
+      points.forEach(p => { const d = Math.hypot(p[0] - cx, p[1] - cy); if (d > reach) reach = d });
+      let nearestEdge = Infinity;
+      for (let i = 0, j = contour.length - 1; i < contour.length; j = i++) {
+        const d = pointSegmentDistance([cx, cy], contour[j], contour[i]);
+        if (d < nearestEdge) nearestEdge = d;
+        if (nearestEdge <= reach) break;
+      }
+      if (nearestEdge > reach) return polygonContainsPoint([cx, cy], contour) ? [points] : [];
       const result = polygonClipping.intersection([closeRing(contour)], [closeRing(points)]), clipped = [];
       result.forEach(polygon => { if (polygon[0] && polygon[0].length >= 3) clipped.push(polygon[0]) });
       return clipped;
+    }
+    function polygonContainsPoint(point, contour) {
+      let inside = false;
+      for (let i = 0, j = contour.length - 1; i < contour.length; j = i++) {
+        const xi = contour[i][0], yi = contour[i][1], xj = contour[j][0], yj = contour[j][1];
+        if (((yi > point[1]) !== (yj > point[1])) && (point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi)) inside = !inside;
+      }
+      return inside;
+    }
+    function ringBounds(points) {
+      const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+      return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+    }
+    function boundsOverlap(a, b) {
+      return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
     }
     function honeycombPolygons(contour, cellSize, wallWidth) {
       const xs = contour.map(point => point[0]), ys = contour.map(point => point[1]);
@@ -1253,13 +1367,13 @@
       });
       return polygons;
     }
-    function etcherGeometries() {
+    function etcherLayers() {
       const d = modelGroup, etcherThick = +$('etcherThick').value, tolerance = +$('etcherTolerance').value;
       const cellSize = +$('etcherCell').value, wallWidth = +$('etcherWall').value;
       if (!Number.isFinite(etcherThick) || etcherThick <= 0 || !Number.isFinite(tolerance) || tolerance < 0 || !Number.isFinite(cellSize) || cellSize < 2 || !Number.isFinite(wallWidth) || wallWidth <= 0) throw new Error('Invalid etcher settings.');
       const ox = d.minX || 0, oy = d.minY || 0, W = d.W, H = d.H;
       const contour = d.contour && d.contour.length >= 3 ? d.contour.map(point => [point[0] - ox, point[1] - oy]) : [[0, 0], [W, 0], [W, H], [0, H]];
-      const geometries = [];
+      const layers = [];
       const lineWidth = Math.max(0.01, d.lw - 2 * tolerance);
       const contactCircles = d.circles.map(circle => ({ x: circle.x - ox, y: circle.y - oy, radius: d.dia / 2 }));
       const localHoles = d.holes.map(hole => ({ ...hole, x: hole.x - ox, y: hole.y - oy }));
@@ -1291,35 +1405,53 @@
         // with overlapping input rings directly is what makes its sweep-line choke on
         // near-duplicate points.
         const overlayCircles = d.circles.map(circle => ({ x: circle.x - ox, y: circle.y - oy, radius: Math.max(0.005, d.dia / 2 + tolerance) }));
-        const pocketPolygons = unionCutouts(overlayCircles, etcherLinePolygons(overlayExtended, overlayWidth, overlayJunctions));
+        const overlayLinePolygons = etcherLinePolygons(overlayExtended, overlayWidth, overlayJunctions);
         const pocketDepth = Math.min(d.extrudeHeight, etcherThick), baseHeight = etcherThick - pocketDepth;
+        // Running a full polygon-clipping difference for every one of the (potentially
+        // thousands of) tiny base pieces against every pocket shape is what makes this take
+        // minutes on a real board - most pieces sit nowhere near any pocket, and a trace that
+        // snakes across the board can give the *merged* pocket shapes a huge bounding box
+        // even though the pocket itself is thin, which would defeat a bbox check based on
+        // them. Filtering against the small, localized pre-merge shapes instead - and cutting
+        // with only the ones that are actually nearby - skips the expensive boolean op for
+        // the vast majority of pieces while keeping each remaining cut small and local.
+        const rawPocketShapes = overlayCircles.map(circle => holePolygon(circle)).concat(overlayLinePolygons);
+        const rawPocketBoxes = rawPocketShapes.map(ringBounds);
         basePolygons.forEach(points => {
-          if (baseHeight > 0) geometries.push(extrudedPolygon(points, baseHeight, 0));
-          if (!pocketPolygons.length) { geometries.push(extrudedPolygon(points, pocketDepth, baseHeight)); return }
+          if (baseHeight > 0) layers.push(polygonLayer(points, baseHeight, 0));
+          if (!rawPocketShapes.length) { layers.push(polygonLayer(points, pocketDepth, baseHeight)); return }
+          const pieceBounds = ringBounds(points);
+          const nearbyPockets = rawPocketShapes.filter((shape, i) => boundsOverlap(pieceBounds, rawPocketBoxes[i]));
+          if (!nearbyPockets.length) { layers.push(polygonLayer(points, pocketDepth, baseHeight)); return }
           try {
-            const cut = polygonClipping.difference([closeRing(points)], ...pocketPolygons.map(hole => [closeRing(hole)]));
-            cut.forEach(rings => { if (rings[0] && rings[0].length >= 3) geometries.push(extrudedPolygonWithHoles(rings, pocketDepth, baseHeight)) });
+            // Feeding difference() the raw, often overlapping/tangent pocket shapes directly
+            // is what makes its sweep-line choke on near-duplicate points (see note above) -
+            // merging just this small nearby subset first keeps that cleanup cheap while
+            // still sanitizing the input.
+            const mergedNearbyPockets = unionInBatches(nearbyPockets.map(shape => [closeRing(shape)]));
+            const cut = polygonClipping.difference([closeRing(points)], ...mergedNearbyPockets);
+            cut.forEach(rings => { if (rings[0] && rings[0].length >= 3) layers.push(polygonWithHolesLayer(rings, pocketDepth, baseHeight)) });
           } catch (e) {
             // A pocket that a piece of base geometry can't be cleanly cut against (rare
             // sweep-line precision failure) shouldn't block the whole export - keep that
             // piece solid instead of losing it.
             console.warn('Etcher pocket cut failed for one base piece, keeping it solid:', e);
-            geometries.push(extrudedPolygon(points, pocketDepth, baseHeight));
+            layers.push(polygonLayer(points, pocketDepth, baseHeight));
           }
         });
       } else {
         if (d.ld > 0) {
-          etcherLinePolygons(extended, lineWidth, junctions).forEach(points => geometries.push(extrudedPolygon(points, d.ld, etcherThick)));
+          etcherLinePolygons(extended, lineWidth, junctions).forEach(points => layers.push(polygonLayer(points, d.ld, etcherThick)));
         }
-        basePolygons.forEach(points => geometries.push(extrudedPolygon(points, etcherThick, 0)));
+        basePolygons.forEach(points => layers.push(polygonLayer(points, etcherThick, 0)));
         const circleRadius = Math.max(0.005, d.dia / 2 - tolerance);
-        if (d.cd > 0) d.circles.forEach(circle => geometries.push(extrudedPolygon(circlePolygon({ x: circle.x - ox, y: circle.y - oy, radius: circleRadius }), d.cd, etcherThick)));
+        if (d.cd > 0) d.circles.forEach(circle => layers.push(polygonLayer(circlePolygon({ x: circle.x - ox, y: circle.y - oy, radius: circleRadius }), d.cd, etcherThick)));
       }
       d.holes.forEach(hole => {
         const holeRadius = Math.max(0.005, hole.diameter / 2 - tolerance);
-        geometries.push(extrudedPolygon(holePolygon({ ...hole, x: hole.x - ox, y: hole.y - oy, radius: holeRadius }), d.t, etcherThick));
+        layers.push(polygonLayer(holePolygon({ ...hole, x: hole.x - ox, y: hole.y - oy, radius: holeRadius }), d.t, etcherThick));
       });
-      return geometries;
+      return layers;
     }
     function shapeToManifold(CrossSection, shape, height, z, seg) {
       const outerPts = shape.getPoints().map(p => [p.x, p.y]);
@@ -1358,10 +1490,49 @@
       const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([stl], { type: 'model/stl' })); link.download = fileName; link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     }
-    function downloadEtcherSTL() {
+    async function downloadEtcherSTL() {
       if (!modelGroup) { $('status').textContent = 'Create a PCB model first.'; return }
-      try { downloadGeometries(etcherGeometries(), 'etcher.stl', 'etcher'); $('status').textContent = 'Etcher STL downloaded: etcher.stl' }
-      catch (e) { $('status').textContent = 'Etcher STL could not be created: ' + e }
+      let layers;
+      try { layers = etcherLayers() }
+      catch (e) { $('status').textContent = 'Etcher STL could not be created: ' + e; return }
+      // The etcher is assembled from many separately-extruded pieces (base slab, honeycomb
+      // walls/connectors, support struts, pocket cutouts, ...) that touch or overlap each
+      // other. Exported as-is those touching faces are duplicate, exactly-overlapping
+      // surfaces - a non-manifold mesh that slicers reject or mishandle - so fuse them into
+      // one watertight solid with manifold-3d first, same as downloadSTL() does for the PCB.
+      try {
+        $('status').textContent = 'Fusing etcher layers into a solid model…';
+        const wasm = await window.manifoldReady;
+        const { Manifold, CrossSection } = wasm;
+        const exportLayers = groupLayersForUnion(layers);
+        const layerManifolds = exportLayers.map(layer => shapeToManifold(CrossSection, layer.shape, layer.height, layer.z, modelGroup.seg));
+        const unioned = Manifold.union(layerManifolds);
+        // manifold-3d can fail to fuse a large number of touching/overlapping pieces and
+        // silently hand back an empty (0-volume) result instead of throwing - which would
+        // otherwise produce a technically "valid" but completely empty STL. Treat that the
+        // same as a thrown error so it falls back to the unmerged pieces below instead.
+        if (unioned.volume() <= 0) { unioned.delete(); layerManifolds.forEach(m => m.delete()); throw new Error('Solid union produced an empty result'); }
+        const geometry = manifoldToGeometry(unioned);
+        layerManifolds.forEach(m => m.delete());
+        unioned.delete();
+        downloadGeometries([geometry], 'etcher.stl', 'etcher');
+        $('status').textContent = 'Etcher STL downloaded: etcher.stl';
+      } catch (mergeError) {
+        // The individual pieces are still valid solids on their own - if the union step is
+        // unavailable (e.g. offline, CDN blocked) fall back to exporting them unmerged
+        // rather than blocking the download. The file will just have the touching-piece
+        // seams again (may show as non-manifold edges in a slicer).
+        console.warn('Etcher solid union unavailable, exporting stacked pieces instead:', mergeError);
+        try {
+          const geometries = layers.map(layer => {
+            const geometry = new THREE.ExtrudeGeometry(layer.shape, { depth: layer.height, bevelEnabled: false, curveSegments: modelGroup.seg });
+            geometry.translate(0, 0, layer.z);
+            return geometry;
+          });
+          downloadGeometries(geometries, 'etcher.stl', 'etcher');
+          $('status').textContent = 'Etcher STL downloaded: etcher.stl';
+        } catch (e) { $('status').textContent = 'Etcher STL could not be created: ' + e }
+      }
     }
 
     async function downloadSTL() {
@@ -1385,6 +1556,9 @@
             const { Manifold, CrossSection } = wasm;
             const layerManifolds = activeLayers.map(layer => shapeToManifold(CrossSection, layer.shape, layer.height, layer.z, modelGroup.seg));
             const unioned = Manifold.union(layerManifolds);
+            // See downloadEtcherSTL: manifold-3d can silently return an empty (0-volume)
+            // result instead of throwing - treat that the same as a thrown error.
+            if (unioned.volume() <= 0) { unioned.delete(); layerManifolds.forEach(m => m.delete()); throw new Error('Solid union produced an empty result'); }
             geometries = [manifoldToGeometry(unioned)];
             layerManifolds.forEach(m => m.delete());
             unioned.delete();

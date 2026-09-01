@@ -232,6 +232,55 @@
       width: 75px
     }
 
+    .trace-color-row {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      margin: 6px 0
+    }
+
+    #etcherSettings,
+    #pcbSettings {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      margin: 6px 0;
+      padding: 8px
+    }
+
+    .trace-color-row summary {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      font-size: 14px
+    }
+
+    .trace-color-row summary input[type=color] {
+      margin-left: auto;
+    }
+
+    .trace-color-controls {
+      display: grid;
+      gap: 8px;
+      padding: 0 8px 8px
+    }
+
+    .trace-color-controls label {
+      display: grid;
+      grid-template-columns: 1fr 90px;
+      align-items: center;
+      gap: 12px;
+      margin: 0;
+    }
+
+    .trace-color-controls input {
+      justify-self: start;
+    }
+
+    .trace-color-controls .remove-hole-color {
+      justify-self: end;
+    }
+
     .remove-hole-color {
       padding: 2px 7px;
       margin: 0;
@@ -314,7 +363,8 @@
         more material.</p>
       <p><strong>Etcher thickness</strong>: thickness of the base layer. <strong>Etcher tolerance</strong>: how much
         extra room the recesses for traces/pads/holes get compared to the PCB design, so the PCB fits in easily.
-        <strong>Cell size / wall width</strong>: size and wall thickness of the honeycomb cells (Honeycomb only).</p>
+        <strong>Cell size / wall width</strong>: size and wall thickness of the honeycomb cells (Honeycomb only).
+      </p>
 
       <h2>Mesh</h2>
       <p><strong>Arc segment resolution</strong>: how many segments round shapes (circles/holes) get — higher is
@@ -330,53 +380,58 @@
       </section>
 
       <section>
-        <h2>Colors</h2>
-        <label>Outer edge <input id="edgeColor" type="color" value="#89071aff"></label>
-        <label>Traces / circles <input id="cutColor" type="color" value="#ffd500"></label>
-        <label>Hole colors and diameters</label>
-        <div id="holePalette"></div>
-        <button class="secondary" id="addHoleColor" type="button">Add hole color</button>
-      </section>
-
-      <section>
         <h2>Model</h2>
+        <div id="pcbSettings">
+          <label>PCB width (cm) <input id="widthCm" type="number" value="0" min="0.01" step="0.01"></label>
+          <label>PCB height (cm) <input id="heightCm" type="number" value="0" min="0.01" step="0.01"></label>
+          <label>Total thickness (mm) <input id="thick" type="number" min="0.1" step="0.1"></label>
+          <label>Extrude traces / circles on top<input id="extrudeOnTop" type="checkbox"></label>
+          <label>Mirror<input id="mirrorToggle" type="checkbox"></label>
+          <label>Arc segment resolution <input id="segments" type="number" value="48" min="12" max="128"
+              step="4"></label>
+        </div>
         <fieldset>
           <legend>View</legend>
           <label><span>PCB</span><input type="radio" name="modelMode" value="pcb" checked></label>
           <label><span>Etcher</span><input type="radio" name="modelMode" value="etcher"></label>
         </fieldset>
-        <div>
-          <label>Extrude traces / circles on top<input id="extrudeOnTop" type="checkbox"></label>
-          <label>Mirror<input id="mirrorToggle" type="checkbox"></label>
-        </div>
+      </section>
+
+      <section>
+        <h2>Colors</h2>
         <div id="pcbSettings">
-          <label>PCB width (cm) <input id="widthCm" type="number" value="0" min="0.01" step="0.01"></label>
-          <label>PCB height (cm) <input id="heightCm" type="number" value="0" min="0.01" step="0.01"></label>
-          <label>Total thickness (mm) <input id="thick" type="number" min="0.1" step="0.1"></label>
-          <label id="lineDepthLabel">Trace depth (mm) <input id="lineDepth" type="number" min="0" step="0.1"></label>
-          <label>Trace width (mm) <input id="lineWidth" type="number" min="0.05" step="0.05"></label>
-          <label id="circleDepthLabel">Circle depth (mm) <input id="circleDepth" type="number" min="0" step="0.1"></label>
-          <label>Circle diameter (mm) <input id="circleDia" type="number" min="0.05" step="0.05"></label>
+          <label>Outer edge <input id="edgeColor" type="color" value="#89071aff"></label>
         </div>
-        <div id="etcherSettings" hidden>
-          <fieldset>
-            <legend>Base infill</legend>
-            <label><span>Honeycomb</span><input type="radio" name="infillType" value="honeycomb" checked></label>
-            <label><span>Solid</span><input type="radio" name="infillType" value="solid"></label>
-          </fieldset>
-          <label>Etcher thickness (mm) <input id="etcherThick" type="number" min="0.1" step="0.1" value="1"></label>
-          <label>Etcher tolerance (mm) <input id="etcherTolerance" type="number" min="0" step="0.01"
-              value="0.1"></label>
-          <div id="honeycombSettings">
-            <label>Honeycomb cell size (mm) <input id="etcherCell" type="number" min="2" step="0.5" value="3"></label>
-            <label>Honeycomb wall width (mm) <input id="etcherWall" type="number" min="0.4" step="0.1" value="0.7"></label>
+        <fieldset>
+          <legend>Hole colors and diameters</legend>
+          <div id="holePalette"></div>
+          <button class="secondary" id="addHoleColor" type="button">Add hole color</button>
+        </fieldset>
+
+        <div>
+          <div id="traceSettings">
+            <div id="tracePalette"></div>
+            <button class="secondary" id="addTraceColor" type="button">Add trace / circle color</button>
+          </div>
+          <div id="etcherSettings" hidden>
+            <fieldset>
+              <legend>Base infill</legend>
+              <label><span>Honeycomb</span><input type="radio" name="infillType" value="honeycomb" checked></label>
+              <label><span>Solid</span><input type="radio" name="infillType" value="solid"></label>
+            </fieldset>
+            <label>Etcher thickness (mm) <input id="etcherThick" type="number" min="0.1" step="0.1" value="1"></label>
+            <label>Etcher tolerance (mm) <input id="etcherTolerance" type="number" min="0" step="0.01"
+                value="0.1"></label>
+            <div id="honeycombSettings">
+              <label>Honeycomb cell size (mm) <input id="etcherCell" type="number" min="2" step="0.5" value="3"></label>
+              <label>Honeycomb wall width (mm) <input id="etcherWall" type="number" min="0.4" step="0.1"
+                  value="0.7"></label>
+            </div>
           </div>
         </div>
       </section>
 
       <section>
-        <h2>Mesh</h2>
-        <label>Arc segment resolution <input id="segments" type="number" value="48" min="12" max="128" step="4"></label>
         <button id="build">Refresh 3D</button>
         <button class="secondary" id="viewToggle">View original SVG</button>
         <button id="download">Download PCB STL</button>
@@ -394,15 +449,16 @@
   <script>
     let svgText = '', modelGroup, showingSvg = false, syncingDimensions = false, mirrored = false, autoDetectHoleProfiles = false;
     const $ = id => document.getElementById(id);
-    const modelDefaults = { thick: '1', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', circleDia: '2', segments: '24' };
+    const modelDefaults = { thick: '1', segments: '24' };
     let holeProfiles = [{ color: '#000000', diameter: '1' }];
+    let traceProfiles = [{ color: '#ffd500', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', circleDia: '2' }], expandedTraceColorIndex = 0;
     const etcherDefaults = { etcherThick: '1', etcherTolerance: '0.1', etcherCell: '3', etcherWall: '0.7' };
     Object.entries({ ...modelDefaults, ...etcherDefaults }).forEach(([id, value]) => $(id).value = value);
     // Debounce so typing/spinning a number field doesn't trigger a full SVG-to-geometry
     // rebuild (parsing + polygon boolean ops) on every single keystroke.
     function debounce(fn, wait) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait) } }
     const rebuild = debounce(() => build(true), 150);
-    const params = ['thick', 'lineDepth', 'lineWidth', 'circleDepth', 'circleDia', 'segments'];
+    const params = ['thick', 'segments'];
     params.forEach(id => $(id).addEventListener('input', rebuild));
     $('extrudeOnTop').addEventListener('change', () => { updateExtrudeVisibility(); rebuild(); });
     ['etcherCell', 'etcherWall'].forEach(id => $(id).addEventListener('input', () => drawPreview()));
@@ -422,6 +478,7 @@
     }
     $('mirrorToggle').addEventListener('change', applyMirrorState);
     $('addHoleColor').onclick = () => { holeProfiles.push({ color: '#000000', diameter: '1' }); renderHolePalette(); build(true) };
+    $('addTraceColor').onclick = () => { traceProfiles.push({ color: '#ffd500', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', circleDia: '2' }); expandedTraceColorIndex = traceProfiles.length - 1; renderTracePalette(); build(true) };
     $('download').onclick = () => downloadSTL();
     $('downloadEtcher').onclick = () => downloadEtcherSTL();
     document.querySelectorAll('input[name="modelMode"]').forEach(input => input.onchange = () => setModelMode());
@@ -431,6 +488,30 @@
     $('helpClose').onclick = () => { $('helpOverlay').hidden = true };
     $('helpOverlay').addEventListener('click', e => { if (e.target === $('helpOverlay')) $('helpOverlay').hidden = true });
     renderHolePalette();
+    renderTracePalette();
+
+    function renderTracePalette() {
+      const palette = $('tracePalette');
+      palette.replaceChildren();
+      traceProfiles.forEach((profile, index) => {
+        const row = document.createElement('details'); row.className = 'trace-color-row'; row.open = index === expandedTraceColorIndex;
+        row.innerHTML = `<summary>Traces / circles ${index + 1}<input type="color" data-field="color" aria-label="Trace / circle color ${index + 1}" value="${profile.color}"></summary><div class="trace-color-controls"><label>Trace ${$('extrudeOnTop').checked ? 'height' : 'depth'} (mm) <input type="number" data-field="lineDepth" min="0" step="0.1" value="${profile.lineDepth}"></label><label>Trace width (mm) <input type="number" data-field="lineWidth" min="0.05" step="0.05" value="${profile.lineWidth}"></label><label>Circle ${$('extrudeOnTop').checked ? 'height' : 'depth'} (mm) <input type="number" data-field="circleDepth" min="0" step="0.1" value="${profile.circleDepth}"></label><label>Circle diameter (mm) <input type="number" data-field="circleDia" min="0.05" step="0.05" value="${profile.circleDia}"></label>${traceProfiles.length > 1 ? '<button type="button" class="remove-hole-color" title="Remove trace / circle color">&times;</button>' : ''}</div>`;
+        row.addEventListener('toggle', () => {
+          if (row.open && expandedTraceColorIndex !== index) { expandedTraceColorIndex = index; renderTracePalette(); }
+        });
+        row.querySelectorAll('input').forEach(input => {
+          const field = input.dataset.field;
+          input.addEventListener('input', () => { traceProfiles[index][field] = input.value; build(true); });
+        });
+        row.querySelector('.remove-hole-color')?.addEventListener('click', () => {
+          traceProfiles.splice(index, 1);
+          expandedTraceColorIndex = Math.min(expandedTraceColorIndex, traceProfiles.length - 1);
+          renderTracePalette();
+          build(true);
+        });
+        palette.appendChild(row);
+      });
+    }
 
     function renderHolePalette() {
       const palette = $('holePalette');
@@ -453,7 +534,7 @@
 
     function setModelMode() {
       const etcher = document.querySelector('input[name="modelMode"]:checked').value === 'etcher';
-      $('pcbSettings').hidden = etcher;
+      $('traceSettings').hidden = etcher;
       $('etcherSettings').hidden = !etcher;
       $('download').hidden = etcher;
       $('downloadEtcher').hidden = !etcher;
@@ -621,6 +702,15 @@
         return;
       }
       const d = modelGroup, w = canvas.width, h = canvas.height; ctx.clearRect(0, 0, w, h);
+      const traceData = d.traceProfileData || [{
+        ld: d.ld,
+        cd: d.cd,
+        dia: d.dia,
+        lw: d.lw,
+        extraHeight: d.extrudeHeight,
+        profileCircles: d.circles,
+        profileLines: linePointLists(d.lines)
+      }];
       // draw base box
       const W = d.W, H = d.H, T = d.t, ox = d.minX || 0, oy = d.minY || 0;
       const contour = d.contour && d.contour.length >= 3 ? d.contour.map(p => [p[0] - ox, p[1] - oy]) : [[0, 0], [W, 0], [W, H], [0, H]];
@@ -635,9 +725,15 @@
       }
       poly(top, '#0e3b19', '#0e3b19');
       if (d.extrudeOnTop) {
-        const overlayHeight = Number.isFinite(d.extrudeHeight) ? d.extrudeHeight : Math.max(d.ld, d.cd, 0.1);
-        d.circles.forEach(c => {
-          drawCylinderPocket(c.x - ox - contourCenter[0], c.y - oy - contourCenter[1], d.dia / 2, d.t + overlayHeight + 0.01, d.t, cx, cy, sc, '#1c5a31', '#1c5a31');
+        traceData.forEach(profile => {
+          const overlayHeight = Number.isFinite(profile.extraHeight) ? profile.extraHeight : Math.max(profile.ld, profile.cd, 0.1);
+          profile.profileCircles.forEach(circle => {
+            drawCylinderPocket(circle.x - ox - contourCenter[0], circle.y - oy - contourCenter[1], profile.dia / 2, d.t + overlayHeight + 0.01, d.t, cx, cy, sc, '#1c5a31', '#1c5a31');
+          });
+          if (profile.ld > 0) lineSegments(profile.profileLines, profile.lw).forEach(segment => {
+            const p1 = proj(segment[0][0] - ox - contourCenter[0], segment[0][1] - oy - contourCenter[1], d.t + overlayHeight / 2, cx, cy, sc), p2 = proj(segment[1][0] - ox - contourCenter[0], segment[1][1] - oy - contourCenter[1], d.t + overlayHeight / 2, cx, cy, sc);
+            ctx.strokeStyle = '#1c5a31'; ctx.lineWidth = Math.max(2, profile.lw * sc); ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+          });
         });
         d.holes.forEach(h => {
           const holePoints = holePolygon({ ...h, radius: h.diameter / 2 }), topRing = [], bottomRing = [];
@@ -652,13 +748,15 @@
           }
           poly(topRing, h.color);
         });
-        if (d.ld > 0) lineSegments(d.lines, d.lw).forEach(seg => {
-          const p1 = proj(seg[0][0] - ox - contourCenter[0], seg[0][1] - oy - contourCenter[1], d.t + overlayHeight / 2, cx, cy, sc), p2 = proj(seg[1][0] - ox - contourCenter[0], seg[1][1] - oy - contourCenter[1], d.t + overlayHeight / 2, cx, cy, sc);
-          ctx.strokeStyle = '#1c5a31'; ctx.lineWidth = Math.max(2, d.lw * sc); ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
-        });
       } else {
-        d.circles.forEach(c => {
-          drawCylinderPocket(c.x - ox - contourCenter[0], c.y - oy - contourCenter[1], d.dia / 2, d.t + 0.01, d.t - d.cd, cx, cy, sc, '#1c5a31', '#1c5a31');
+        traceData.forEach(profile => {
+          profile.profileCircles.forEach(circle => {
+            drawCylinderPocket(circle.x - ox - contourCenter[0], circle.y - oy - contourCenter[1], profile.dia / 2, d.t + 0.01, d.t - profile.cd, cx, cy, sc, '#1c5a31', '#1c5a31');
+          });
+          if (profile.ld > 0) lineSegments(profile.profileLines, profile.lw).forEach(segment => {
+            const p1 = proj(segment[0][0] - ox - contourCenter[0], segment[0][1] - oy - contourCenter[1], d.t - profile.ld, cx, cy, sc), p2 = proj(segment[1][0] - ox - contourCenter[0], segment[1][1] - oy - contourCenter[1], d.t - profile.ld, cx, cy, sc);
+            ctx.strokeStyle = '#1c5a31'; ctx.lineWidth = Math.max(2, profile.lw * sc); ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+          });
         });
         // through holes
         d.holes.forEach(h => {
@@ -673,11 +771,6 @@
             poly([topRing[i], topRing[j], bottomRing[j], bottomRing[i]], h.color);
           }
           poly(topRing, h.color);
-        });
-        // recessed line segments
-        lineSegments(d.lines, d.lw).forEach(seg => {
-          const p1 = proj(seg[0][0] - ox - contourCenter[0], seg[0][1] - oy - contourCenter[1], d.t - d.ld, cx, cy, sc), p2 = proj(seg[1][0] - ox - contourCenter[0], seg[1][1] - oy - contourCenter[1], d.t - d.ld, cx, cy, sc);
-          ctx.strokeStyle = '#1c5a31'; ctx.lineWidth = Math.max(2, d.lw * sc); ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
         });
       }
       ctx.fillStyle = '#444'; ctx.font = `${13 * devicePixelRatio}px system-ui`; ctx.fillText('3D preview — drag to rotate, Shift-drag to move', 20, 30);
@@ -754,8 +847,8 @@
       const visible = (value, color, opacity) => sameColor(value, color) && Number(opacity) > 0 && Number(computed.opacity) > 0;
       return holeProfiles.find(profile => visible(fill, profile.color, computed.fillOpacity) || visible(stroke, profile.color, computed.strokeOpacity));
     }
-    function findVisibleHoleColor(fill, stroke, computed, cut, edge) {
-      const visible = (value, opacity) => Number(opacity) > 0 && Number(computed.opacity) > 0 && value && value !== 'none' && !sameColor(value, cut) && !sameColor(value, edge);
+    function findVisibleHoleColor(fill, stroke, computed, cuts, edge) {
+      const visible = (value, opacity) => Number(opacity) > 0 && Number(computed.opacity) > 0 && value && value !== 'none' && !cuts.some(cut => sameColor(value, cut)) && !sameColor(value, edge);
       if (visible(fill, computed.fillOpacity)) return colorInputValue(fill);
       if (visible(stroke, computed.strokeOpacity)) return colorInputValue(stroke);
       return null;
@@ -776,8 +869,8 @@
     }
     let parseSVGCache = null;
     function parseSVG() {
-      const edge = $('edgeColor').value.toLowerCase(), cut = $('cutColor').value.toLowerCase();
-      const cacheKey = svgText + '|' + edge + '|' + cut + '|' + JSON.stringify(holeProfiles);
+      const edge = $('edgeColor').value.toLowerCase(), cuts = traceProfiles.map(profile => profile.color.toLowerCase());
+      const cacheKey = svgText + '|' + edge + '|' + JSON.stringify(traceProfiles) + '|' + JSON.stringify(holeProfiles);
       if (parseSVGCache && parseSVGCache.key === cacheKey) return parseSVGCache.result;
       const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
       const root = doc.documentElement;
@@ -808,10 +901,10 @@
           const r = tag === 'circle' ? parseFloat(el.getAttribute('r')) : (parseFloat(el.getAttribute('rx')) + parseFloat(el.getAttribute('ry'))) / 2;
           if ([lx, ly, r].every(Number.isFinite)) {
             const [x, y] = toGlobal(el, lx, ly);
-            const circle = { x, y, r };
+            const circle = { x, y, r, traceProfileIndex: cuts.findIndex(cut => sameColor(fill, cut) || sameColor(stroke, cut)) };
             let holeProfile = findHoleProfile(fill, stroke, computed);
             if (!holeProfile && autoDetectHoleProfiles) {
-              const detectedColor = findVisibleHoleColor(fill, stroke, computed, cut, edge);
+              const detectedColor = findVisibleHoleColor(fill, stroke, computed, cuts, edge);
               if (detectedColor) {
                 holeProfile = { color: detectedColor, diameter: '1' };
                 holeProfiles.push(holeProfile);
@@ -819,20 +912,21 @@
               }
             }
             if (!holeProfile) {
-              const detectedColor = findVisibleHoleColor(fill, stroke, computed, cut, edge);
+              const detectedColor = findVisibleHoleColor(fill, stroke, computed, cuts, edge);
               if (detectedColor) holeProfile = { color: detectedColor, diameter: '1' };
             }
             if (holeProfile) holes.push({ ...circle, color: holeProfile.color, diameter: holeProfile.diameter });
-            if (sameColor(fill, cut) || sameColor(stroke, cut)) circles.push(circle);
+            if (cuts.some(cut => sameColor(fill, cut) || sameColor(stroke, cut))) circles.push(circle);
           }
         } else if (tag === 'line' || tag === 'polyline' || tag === 'path') {
           const sampledPoints = tag === 'path' ? samplePath(el) : elPoints(el);
-          if (sameColor(c, cut) && !sameColor(c, edge)) {
+          if (cuts.some(cut => sameColor(c, cut)) && !sameColor(c, edge)) {
             // getCTM() only works while the element is still in the document (see
             // host.remove() below). Transform the points here and cache them on the
             // element instead of doing this lazily in linePointLists; otherwise a
             // <polyline>/<line> with its own transform would silently use raw coordinates.
             el._sampledPoints = sampledPoints;
+            el._traceProfileIndex = cuts.findIndex(cut => sameColor(c, cut));
             lines.push(el);
           }
           if (tag === 'path' && sameColor(c, edge) && sampledPoints?.length >= 3) {
@@ -846,24 +940,31 @@
             const points = elPoints({ tagName: 'rect', getAttribute: name => ({ x, y, width, height }[name]), getCTM: () => el.getCTM() }) || [
               toGlobal(el, x, y), toGlobal(el, x + width, y), toGlobal(el, x + width, y + height), toGlobal(el, x, y + height)
             ];
-            let holeProfile = findHoleProfile(fill, stroke, computed);
-            if (!holeProfile && autoDetectHoleProfiles) {
-              const detectedColor = findVisibleHoleColor(fill, stroke, computed, cut, edge);
-              if (detectedColor) {
-                holeProfile = { color: detectedColor, diameter: '1' };
-                holeProfiles.push(holeProfile);
-                paletteChanged = true;
+            const traceProfileIndex = cuts.findIndex(cut => sameColor(fill, cut) || sameColor(stroke, cut));
+            if (traceProfileIndex !== -1 && !sameColor(c, edge)) {
+              el._sampledPoints = points;
+              el._traceProfileIndex = traceProfileIndex;
+              lines.push(el);
+            } else {
+              let holeProfile = findHoleProfile(fill, stroke, computed);
+              if (!holeProfile && autoDetectHoleProfiles) {
+                const detectedColor = findVisibleHoleColor(fill, stroke, computed, cuts, edge);
+                if (detectedColor) {
+                  holeProfile = { color: detectedColor, diameter: '1' };
+                  holeProfiles.push(holeProfile);
+                  paletteChanged = true;
+                }
               }
-            }
-            if (!holeProfile) {
-              const detectedColor = findVisibleHoleColor(fill, stroke, computed, cut, edge);
-              if (detectedColor) holeProfile = { color: detectedColor, diameter: '1' };
-            }
-            if (Math.abs(width - height) < 0.0001 && holeProfile) {
-              const [centerX, centerY] = toGlobal(el, x + width / 2, y + height / 2);
-              holes.push({ x: centerX, y: centerY, square: true, color: holeProfile.color, diameter: holeProfile.diameter });
-            } else if (sameColor(c, edge)) {
-              contourCandidates.push({ points, edge: true });
+              if (!holeProfile) {
+                const detectedColor = findVisibleHoleColor(fill, stroke, computed, cuts, edge);
+                if (detectedColor) holeProfile = { color: detectedColor, diameter: '1' };
+              }
+              if (Math.abs(width - height) < 0.0001 && holeProfile) {
+                const [centerX, centerY] = toGlobal(el, x + width / 2, y + height / 2);
+                holes.push({ x: centerX, y: centerY, square: true, color: holeProfile.color, diameter: holeProfile.diameter });
+              } else if (sameColor(c, edge)) {
+                contourCandidates.push({ points, edge: true });
+              }
             }
           }
         }
@@ -886,7 +987,8 @@
         boardW = Math.max(...xs) - boardMinX; boardH = Math.max(...ys) - boardMinY;
       }
       const physicalBoardWmm = boardW / W * physicalWmm, physicalBoardHmm = boardH / H * physicalHmm;
-      const result = { minX, minY, W, H, physicalWmm, physicalHmm, physicalBoardWmm, physicalBoardHmm, boardMinX, boardMinY, boardW, boardH, lines, circles, holes, paths, contour, doc };
+      const lineProfileIndices = lines.map(el => el._traceProfileIndex);
+      const result = { minX, minY, W, H, physicalWmm, physicalHmm, physicalBoardWmm, physicalBoardHmm, boardMinX, boardMinY, boardW, boardH, lines, circles, holes, paths, contour, doc, lineProfileIndices };
       parseSVGCache = { key: cacheKey, result };
       return result;
     }
@@ -956,7 +1058,8 @@
         contour: data.contour?.map(point) || null,
         lines: linePointLists(data.lines).map(points => points.map(point)),
         circles: data.circles.map(c => ({ ...c, x: c.x * scaleX, y: c.y * scaleY, r: c.r * Math.min(scaleX, scaleY) })),
-        holes: data.holes.map(h => ({ ...h, x: h.x * scaleX, y: h.y * scaleY, r: h.r * Math.min(scaleX, scaleY) }))
+        holes: data.holes.map(h => ({ ...h, x: h.x * scaleX, y: h.y * scaleY, r: h.r * Math.min(scaleX, scaleY) })),
+        lineProfileIndices: data.lineProfileIndices
       };
     }
     function mirrorModelData(data) {
@@ -974,7 +1077,8 @@
         contour: data.contour?.map(point => [mirrorX(point[0]), point[1]]).reverse() || null,
         lines: linePointLists(data.lines).map(mirrorPoints),
         circles: data.circles.map(circle => ({ ...circle, x: mirrorX(circle.x) })),
-        holes: data.holes.map(hole => ({ ...hole, x: mirrorX(hole.x) }))
+        holes: data.holes.map(hole => ({ ...hole, x: mirrorX(hole.x) })),
+        lineProfileIndices: data.lineProfileIndices
       };
     }
     function segmentQuad(p1, p2, half) {
@@ -986,16 +1090,42 @@
       for (let i = 0; i < count; i++) { const angle = i / count * Math.PI * 2; points.push([p[0] + Math.cos(angle) * half, p[1] + Math.sin(angle) * half]) }
       return points;
     }
-    function strokedPolygons(items, width) {
-      // Each trace is built from separate simple shapes (a rectangle per segment plus a
-      // round joint at each point, matching stroke-linecap/linejoin="round" in the source).
-      // This prevents one long self-overlapping contour from being cut incorrectly when
-      // merged with a circle, especially when a trace starts or ends inside a circle.
+    function strokedPolygons(items, width, protectedCircles = []) {
       const half = width / 2, out = [];
       linePointLists(items).forEach(points => {
         if (points.length < 2) return;
         for (let i = 0; i < points.length - 1; i++) out.push(segmentQuad(points[i], points[i + 1], half));
-        points.forEach(p => out.push(jointCircle(p, half)));
+        points.forEach(p => {
+          if (!protectedCircles.some(circle => Math.hypot(p[0] - circle.x, p[1] - circle.y) <= circle.radius)) out.push(jointCircle(p, half));
+        });
+      });
+      return out.filter(points => points.length >= 3);
+    }
+    function tracePolygons(items, width) {
+      // A global polygon union can fail on dense SVGs. Each trace must therefore be a single
+      // valid closed outline, rather than overlapping segment holes that Three.js cannot
+      // represent as one recessed groove.
+      const half = width / 2, out = [];
+      linePointLists(items).forEach(points => {
+        if (points.length < 2) return;
+        const offsetPoint = (index, side) => {
+          const previous = points[Math.max(0, index - 1)], current = points[index], next = points[Math.min(points.length - 1, index + 1)];
+          const previousLength = Math.hypot(current[0] - previous[0], current[1] - previous[1]) || 1;
+          const nextLength = Math.hypot(next[0] - current[0], next[1] - current[1]) || 1;
+          const previousNormal = [-(current[1] - previous[1]) / previousLength, (current[0] - previous[0]) / previousLength];
+          const nextNormal = [-(next[1] - current[1]) / nextLength, (next[0] - current[0]) / nextLength];
+          if (index === 0) return [current[0] + nextNormal[0] * half * side, current[1] + nextNormal[1] * half * side];
+          if (index === points.length - 1) return [current[0] + previousNormal[0] * half * side, current[1] + previousNormal[1] * half * side];
+          let normal = [previousNormal[0] + nextNormal[0], previousNormal[1] + nextNormal[1]];
+          const normalLength = Math.hypot(normal[0], normal[1]);
+          if (normalLength < 1e-6) normal = index === 0 ? nextNormal : previousNormal;
+          else normal = [normal[0] / normalLength, normal[1] / normalLength];
+          const scale = Math.min(half * 4, half / Math.max(0.25, Math.abs(normal[0] * nextNormal[0] + normal[1] * nextNormal[1])));
+          return [current[0] + normal[0] * scale * side, current[1] + normal[1] * scale * side];
+        };
+        const left = points.map((_, index) => offsetPoint(index, 1));
+        const right = points.map((_, index) => offsetPoint(index, -1)).reverse();
+        out.push(left.concat(right));
       });
       return out.filter(points => points.length >= 3);
     }
@@ -1012,7 +1142,14 @@
     function unionCutouts(circles, linePolygons) {
       const polygons = circles.map(circle => [holePolygon(circle)]).concat(linePolygons.map(points => [points]));
       if (!polygons.length) return [];
-      const result = polygonClipping.union(...polygons), out = [];
+      let result;
+      try {
+        result = unionInBatches(polygons);
+      } catch (e) {
+        console.warn('Merging trace and circle cutouts failed; using separate cutouts instead:', e);
+        result = polygons;
+      }
+      const out = [];
       result.forEach(polygon => { if (polygon[0] && polygon[0].length >= 3) out.push(polygon[0]) });
       return out;
     }
@@ -1105,41 +1242,82 @@
       const requestedHeight = +$('heightCm').value;
       if (Number.isFinite(requestedWidth) && requestedWidth > 0 && Number.isFinite(requestedHeight) && requestedHeight > 0 && d.physicalBoardWmm > 0 && d.physicalBoardHmm > 0) d = scaleModelData(d, requestedWidth * 10 / d.physicalBoardWmm, requestedHeight * 10 / d.physicalBoardHmm);
       if (mirrored) d = mirrorModelData(d);
-      const t = +$('thick').value, ld = Math.min(+$('lineDepth').value, t), cd = Math.min(+$('circleDepth').value, t), extraHeight = Math.max(0.01, +$('lineDepth').value || 0.5);
-      const dia = +$('circleDia').value, lw = +$('lineWidth').value, seg = +$('segments').value, ox = d.minX || 0, oy = d.minY || 0;
+      const t = +$('thick').value, seg = +$('segments').value, ox = d.minX || 0, oy = d.minY || 0;
       const contour = d.contour && d.contour.length >= 3 ? d.contour.map(p => [p[0] - ox, p[1] - oy]) : [[0, 0], [d.W, 0], [d.W, d.H], [0, d.H]];
       const throughHoles = d.holes.map(h => ({ ...h, radius: h.diameter / 2 }));
       const extrudeOnTop = !!$('extrudeOnTop').checked;
-      // Each circle in the trace color becomes a recessed circle, even when a through-hole
-      // is at the same location (a pad often has both a shallow round pocket and a hole).
-      // Previously, those pockets were incorrectly skipped when a hole overlapped, leaving
-      // exactly the pads connected to a trace without a clean circular recess.
-      const recessCircles = d.circles.map(c => ({ x: c.x, y: c.y, radius: dia / 2 }));
-      const linePolygons = strokedPolygons(d.lines, lw);
+      
+      // Build profile data: group circles and lines by their trace profile, and compute geometry per profile
+      const profileData = traceProfiles.map((profile, profileIndex) => {
+        const ld = Math.min(+profile.lineDepth, t);
+        const cd = Math.min(+profile.circleDepth, t);
+        const dia = +profile.circleDia;
+        const lw = +profile.lineWidth;
+        const extraHeight = Math.max(0.01, +profile.lineDepth || 0.5);
+        
+        // Find circles that belong to this profile
+        const profileCircles = d.circles.filter(c => c.traceProfileIndex === profileIndex);
+        const recessCircles = profileCircles.map(c => ({ x: c.x, y: c.y, radius: dia / 2 }));
+        
+        // Find lines that belong to this profile (by checking lineProfileIndices)
+        const pointLists = linePointLists(d.lines);
+        const profileLines = pointLists.filter((_, lineIndex) => d.lineProfileIndices && d.lineProfileIndices[lineIndex] === profileIndex);
+        const linePolygons = tracePolygons(profileLines, lw);
+        
+        return { ld, cd, dia, lw, extraHeight, profileCircles, recessCircles, profileLines, linePolygons };
+      });
+      
+      // Use first profile for fallback values
+      const firstProfile = profileData[0];
+      
       if (extrudeOnTop) {
         const throughHolePolygons = throughHoles.map(hole => holePolygon(hole));
         const throughHoleBounds = throughHolePolygons.map(ringBounds);
-        const overlayLayers = points => {
+        const baseOverlap = 0.01;
+        const overlayLayers = (points, height) => {
           const bounds = ringBounds(points);
           const nearbyHoles = throughHolePolygons.filter((hole, index) => boundsOverlap(bounds, throughHoleBounds[index]));
           const cut = nearbyHoles.length ? polygonClipping.difference([closeRing(points)], ...nearbyHoles.map(hole => [closeRing(hole)])) : [[closeRing(points)]];
-          return cut.filter(rings => rings[0] && rings[0].length >= 3).map(rings => ({ z: t, depth: extraHeight, height: extraHeight, shape: polygonWithHolesShape(rings, ox, oy) }));
+          return cut.filter(rings => rings[0] && rings[0].length >= 3).map(rings => ({ z: t - baseOverlap, depth: height + baseOverlap, height: height + baseOverlap, shape: polygonWithHolesShape(rings, ox, oy) }));
         };
         const layers = [{ z: 0, depth: t, height: t, shape: makeShape(contour, throughHoles, [], [], ox, oy, false) }];
-        if (linePolygons.length) linePolygons.forEach(points => layers.push(...overlayLayers(points)));
-        if (d.circles.length) d.circles.forEach(circle => { const points = circlePolygon({ x: circle.x, y: circle.y, radius: dia / 2 }); layers.push(...overlayLayers(points)); });
-        return { ...d, t, ld, cd, dia, lw, seg, W: d.W, H: d.H, extrudeOnTop, extrudeHeight: extraHeight, layers };
+        profileData.forEach(pd => {
+          if (pd.linePolygons.length) pd.linePolygons.forEach(points => layers.push(...overlayLayers(points, pd.extraHeight)));
+          if (pd.profileCircles.length) pd.profileCircles.forEach(circle => { const points = circlePolygon({ x: circle.x, y: circle.y, radius: pd.dia / 2 }); layers.push(...overlayLayers(points, pd.extraHeight)); });
+        });
+        return { ...d, t, ld: firstProfile.ld, cd: firstProfile.cd, dia: firstProfile.dia, lw: firstProfile.lw, seg, W: d.W, H: d.H, extrudeOnTop, extrudeHeight: firstProfile.extraHeight, traceProfileData: profileData, layers };
       }
-      const levels = [...new Set([0, t, ...(ld > 0 && ld < t ? [t - ld] : []), ...(cd > 0 && cd < t ? [t - cd] : [])])];
-      levels.sort((a, b) => a - b);
+      
+      // Collect all depth levels from all profiles
+      const allLevels = new Set([0, t]);
+      profileData.forEach(pd => {
+        if (pd.ld > 0 && pd.ld < t) allLevels.add(t - pd.ld);
+        if (pd.cd > 0 && pd.cd < t) allLevels.add(t - pd.cd);
+      });
+      
+      const levels = Array.from(allLevels).sort((a, b) => a - b);
       const layers = [];
+      
       for (let i = 0; i < levels.length - 1; i++) {
         const z = levels[i], depth = t - z;
-        const activeCircles = recessCircles.filter(circle => cd >= depth - 0.0001);
-        const activeLines = depth <= ld + 0.0001 ? linePolygons : [];
-        layers.push({ z, depth, height: levels[i + 1] - z, shape: makeShape(contour, throughHoles, activeCircles, activeLines, ox, oy, true) });
+        
+        // Collect all circles and lines that are active at this depth from all profiles
+        let allActiveCircles = [];
+        let allActiveLines = [];
+        
+        profileData.forEach(pd => {
+          if (pd.cd >= depth - 0.0001) {
+            allActiveCircles = allActiveCircles.concat(pd.recessCircles);
+          }
+          if (depth <= pd.ld + 0.0001) {
+            allActiveLines = allActiveLines.concat(pd.linePolygons);
+          }
+        });
+        
+        layers.push({ z, depth, height: levels[i + 1] - z, shape: makeShape(contour, throughHoles, allActiveCircles, allActiveLines, ox, oy, true) });
       }
-      return { ...d, t, ld, cd, dia, lw, seg, W: d.W, H: d.H, extrudeOnTop, extrudeHeight: extraHeight, layers };
+      
+      return { ...d, t, ld: firstProfile.ld, cd: firstProfile.cd, dia: firstProfile.dia, lw: firstProfile.lw, seg, W: d.W, H: d.H, extrudeOnTop, extrudeHeight: firstProfile.extraHeight, traceProfileData: profileData, layers };
     }
     function build(silent) {
       if (!svgText) { if (!silent) $('status').textContent = 'Please load an SVG file first.'; return }
@@ -1540,40 +1718,38 @@
       try {
         const activeLayers = modelGroup.layers.filter(layer => layer.height > 0);
         let geometries;
-        if (modelGroup.extrudeOnTop) {
-          // Overlay mode stacks multiple positive layers on top of the base plate. These can
-          // overlap the same top face and trigger invalid unions in the manifold kernel,
-          // so export them as independent valid solids instead of forcing a risky merge.
+        try {
+          $('status').textContent = 'Fusing layers into a solid model…';
+          const wasm = await window.manifoldReady;
+          const { Manifold, CrossSection } = wasm;
+          const layerManifolds = activeLayers.map(layer => shapeToManifold(CrossSection, layer.shape, layer.height, layer.z, modelGroup.seg));
+          const unioned = Manifold.union(layerManifolds);
+          // See downloadEtcherSTL: manifold-3d can silently return an empty (0-volume)
+          // result instead of throwing - treat that the same as a thrown error.
+          if (unioned.volume() <= 0) { unioned.delete(); layerManifolds.forEach(m => m.delete()); throw new Error('Solid union produced an empty result'); }
+          const geometry = manifoldToGeometry(unioned);
+          const expectedMaxZ = Math.max(...activeLayers.map(layer => layer.z + layer.height));
+          let exportedMaxZ = -Infinity;
+          const positions = geometry.attributes.position.array;
+          for (let index = 2; index < positions.length; index += 3) exportedMaxZ = Math.max(exportedMaxZ, positions[index]);
+          if (modelGroup.extrudeOnTop && exportedMaxZ < expectedMaxZ - 0.001) {
+            geometry.dispose(); unioned.delete(); layerManifolds.forEach(m => m.delete());
+            throw new Error('Solid union dropped the top trace layers');
+          }
+          geometries = [geometry];
+          layerManifolds.forEach(m => m.delete());
+          unioned.delete();
+        } catch (mergeError) {
+          // The stacked layers are still individually valid solids on their own — if the
+          // union step is unavailable (e.g. offline, CDN blocked) fall back to exporting
+          // them unmerged rather than blocking the download. The file will just have the
+          // touching-layer seams again (may show as non-manifold edges in a slicer).
+          console.warn('Solid union unavailable, exporting stacked layers instead:', mergeError);
           geometries = activeLayers.map(layer => {
             const geometry = new THREE.ExtrudeGeometry(layer.shape, { depth: layer.height, bevelEnabled: false, curveSegments: modelGroup.seg });
             geometry.translate(0, 0, layer.z);
             return geometry;
           });
-        } else {
-          try {
-            $('status').textContent = 'Fusing layers into a solid model…';
-            const wasm = await window.manifoldReady;
-            const { Manifold, CrossSection } = wasm;
-            const layerManifolds = activeLayers.map(layer => shapeToManifold(CrossSection, layer.shape, layer.height, layer.z, modelGroup.seg));
-            const unioned = Manifold.union(layerManifolds);
-            // See downloadEtcherSTL: manifold-3d can silently return an empty (0-volume)
-            // result instead of throwing - treat that the same as a thrown error.
-            if (unioned.volume() <= 0) { unioned.delete(); layerManifolds.forEach(m => m.delete()); throw new Error('Solid union produced an empty result'); }
-            geometries = [manifoldToGeometry(unioned)];
-            layerManifolds.forEach(m => m.delete());
-            unioned.delete();
-          } catch (mergeError) {
-            // The stacked layers are still individually valid solids on their own — if the
-            // union step is unavailable (e.g. offline, CDN blocked) fall back to exporting
-            // them unmerged rather than blocking the download. The file will just have the
-            // touching-layer seams again (may show as non-manifold edges in a slicer).
-            console.warn('Solid union unavailable, exporting stacked layers instead:', mergeError);
-            geometries = activeLayers.map(layer => {
-              const geometry = new THREE.ExtrudeGeometry(layer.shape, { depth: layer.height, bevelEnabled: false, curveSegments: modelGroup.seg });
-              geometry.translate(0, 0, layer.z);
-              return geometry;
-            });
-          }
         }
         geometries.forEach(geometry => { geometry.scale(1, -1, 1); geometry.translate(0, modelGroup.H, 0) });
         downloadGeometries(geometries, 'pcb.stl', 'pcb');

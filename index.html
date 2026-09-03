@@ -30,12 +30,29 @@
       color: white;
       display: flex;
       align-items: center;
-      justify-content: space-between
+      justify-content: space-between;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 50
     }
 
     header .secondary {
       background: #3c4043;
       color: white
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap
+    }
+
+    .header-actions button {
+      margin: 0;
+      padding: 8px 10px
     }
 
     #helpOverlay {
@@ -312,6 +329,20 @@
     }
 
     @media(max-width:800px) {
+      header {
+        align-items: flex-start;
+        padding: 12px 14px
+      }
+
+      .header-actions {
+        gap: 4px
+      }
+
+      .header-actions button {
+        padding: 7px 8px;
+        font-size: 12px
+      }
+
       main {
         grid-template-columns: 1fr
       }
@@ -331,15 +362,21 @@
 <body>
   <header>
     <h1>PCB Etcher</h1>
-    <button class="secondary" id="helpBtn" type="button">Help</button>
+    <div class="header-actions">
+      <button id="build">Refresh 3D</button>
+      <button class="secondary" id="viewToggle">View original SVG</button>
+      <button id="download">Download PCB STL</button>
+      <button id="downloadEtcher" hidden>Download etcher STL</button>
+      <button class="secondary" id="reset">Reset settings</button>
+      <button class="secondary" id="helpBtn" type="button">Help</button>
+    </div>
   </header>
   <div id="helpOverlay" hidden>
     <div id="helpPanel">
       <button class="secondary" id="helpClose" type="button">Close</button>
       <h2>What does this tool do?</h2>
       <p>You load an SVG of a PCB design. From that, the tool builds a 3D model: either the <strong>PCB itself</strong>
-        (with recessed traces/pads as an etching preview), or an <strong>etch template</strong> (a mold used to
-        etch/engrave the PCB).</p>
+        with recessed or raised traces and pads, or an <strong>etch template</strong> that fits around the PCB.</p>
 
       <h2>SVG</h2>
       <p>Load the source file here. The colors in the SVG determine what counts as traces, pads and holes (see the
@@ -347,12 +384,15 @@
 
       <h2>Colors</h2>
       <p><strong>Outer edge</strong>: color of the outer outline of the PCB. <strong>Traces / circles</strong>: color of
-        the traces and pads. <strong>Hole colors</strong>: link colors to holes with a diameter, for through-holes in
-        the PCB.</p>
+        the traces and pads. Add a trace / circle color for each SVG color that needs its own trace width, trace
+        depth or height, circle diameter, or circle depth or height. <strong>Hole colors</strong>: link colors to holes
+        with a diameter, for through-holes in the PCB.</p>
 
       <h2>Model — PCB</h2>
-      <p>Generates the PCB itself, with adjustable total thickness and depth/width of traces and pads. Useful as a 3D
-        reference model.</p>
+      <p>Set the PCB width or height to scale the model while preserving its proportions. <strong>Total thickness</strong>
+        controls the board thickness. With <strong>Extrude traces / circles</strong> off, traces and circles are
+        recessed grooves in the PCB; their values are depths. With it on, they are raised above the PCB; their values
+        are heights. <strong>Mirror</strong> flips the generated PCB and the original SVG view.</p>
 
       <h2>Model — Etcher</h2>
       <p>Generates a template shape to hold the PCB in and etch it. It consists of an outer wall on the outline, a base
@@ -368,8 +408,10 @@
 
       <h2>Mesh</h2>
       <p><strong>Arc segment resolution</strong>: how many segments round shapes (circles/holes) get — higher is
-        smoother but heavier to render. <strong>Refresh 3D</strong> rebuilds the model after changes. <strong>Download
-          PCB/etcher STL</strong> exports the current model as a 3D-printable file.</p>
+        smoother but heavier to render. The fixed top bar keeps <strong>Refresh 3D</strong>, <strong>View original SVG</strong>,
+        <strong>Download PCB STL</strong> or <strong>Download etcher STL</strong>, and <strong>Reset settings</strong> available
+        while you scroll. Refresh rebuilds the model after changes; download exports the active model as a
+        3D-printable STL file.</p>
     </div>
   </div>
   <main>
@@ -385,7 +427,7 @@
           <label>PCB width (cm) <input id="widthCm" type="number" value="0" min="0.01" step="0.01"></label>
           <label>PCB height (cm) <input id="heightCm" type="number" value="0" min="0.01" step="0.01"></label>
           <label>Total thickness (mm) <input id="thick" type="number" min="0.1" step="0.1"></label>
-          <label>Extrude traces / circles on top<input id="extrudeOnTop" type="checkbox"></label>
+          <label>Extrude traces / circles<input id="extrudeOnTop" type="checkbox"></label>
           <label>Mirror<input id="mirrorToggle" type="checkbox"></label>
           <label>Arc segment resolution <input id="segments" type="number" value="48" min="12" max="128"
               step="4"></label>
@@ -429,14 +471,6 @@
             </div>
           </div>
         </div>
-      </section>
-
-      <section>
-        <button id="build">Refresh 3D</button>
-        <button class="secondary" id="viewToggle">View original SVG</button>
-        <button id="download">Download PCB STL</button>
-        <button id="downloadEtcher" hidden>Download etcher STL</button>
-        <button class="secondary" id="reset">Reset settings</button>
       </section>
 
     </aside>

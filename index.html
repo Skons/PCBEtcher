@@ -37,6 +37,13 @@
       z-index: 50
     }
 
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap
+    }
+
     header .secondary {
       background: #3c4043;
       color: white
@@ -46,11 +53,22 @@
       display: flex;
       align-items: center;
       justify-content: flex-end;
-      gap: 8px;
+      gap: 12px;
       flex-wrap: wrap
     }
 
+    .header-group {
+      display: flex;
+      align-items: center;
+      gap: 4px
+    }
+
     .header-actions button {
+      margin: 0;
+      padding: 8px 10px
+    }
+
+    .header-title button {
       margin: 0;
       padding: 8px 10px
     }
@@ -171,6 +189,12 @@
       color: white;
       cursor: pointer;
       margin: 4px 0
+    }
+
+    button:disabled {
+      background: #9aa0a6;
+      color: #e8eaed;
+      cursor: not-allowed
     }
 
     button.secondary {
@@ -335,7 +359,7 @@
       }
 
       .header-actions {
-        gap: 4px
+        gap: 8px
       }
 
       .header-actions button {
@@ -361,14 +385,27 @@
 
 <body>
   <header>
-    <h1>PCB Etcher</h1>
-    <div class="header-actions">
-      <button id="build">Refresh 3D</button>
-      <button class="secondary" id="viewToggle">View original SVG</button>
-      <button id="download">Download PCB STL</button>
+    <div class="header-title">
+      <h1>PCB Etcher</h1>
+      <button id="chooseFile" type="button">Choose SVG</button>
+      <input id="file" type="file" accept=".svg,image/svg+xml" hidden>
+      <button id="download" type="button" disabled>Download PCB STL</button>
       <button id="downloadEtcher" hidden>Download etcher STL</button>
-      <button class="secondary" id="reset">Reset settings</button>
-      <button class="secondary" id="helpBtn" type="button">Help</button>
+    </div>
+    <div class="header-actions">
+      <div class="header-group">
+        <button class="secondary" id="openSettings" type="button">Open settings</button>
+        <input id="settingsFile" type="file" accept="application/json,.json" hidden>
+        <button class="secondary" id="saveSettings" type="button">Save settings</button>
+        <button class="secondary" id="reset">Reset settings</button>
+      </div>
+      <div class="header-group">
+        <button id="build">Refresh 3D</button>
+        <button class="secondary" id="viewToggle">View original SVG</button>
+      </div>
+      <div class="header-group">
+        <button class="secondary" id="helpBtn" type="button">Help</button>
+      </div>
     </div>
   </header>
   <div id="helpOverlay" hidden>
@@ -393,6 +430,10 @@
         controls the board thickness. With <strong>Extrude traces / pads</strong> off, traces and pads are
         recessed grooves in the PCB; their values are depths. With it on, they are raised above the PCB; their values
         are heights. <strong>Mirror</strong> flips the generated PCB and the original SVG view.</p>
+      <p><strong>Ridge width / Ridge height</strong> (per trace / pad color): with <strong>Extrude traces / pads</strong>
+        off, this adds a raised rim of the given width and height around that color's traces and pads. The rim
+        always runs around the traces and pads, never across them; through-holes stay open. Set the width or
+        height to 0 for no rim.</p>
 
       <h2>Model — Etcher</h2>
       <p>Generates a template shape to hold the PCB in and etch it. It consists of an outer wall on the outline, a base
@@ -417,7 +458,7 @@
   <main>
     <aside>
       <section>
-        <h2>SVG</h2><input id="file" type="file" accept=".svg,image/svg+xml">
+        <h2>SVG</h2>
         <p class="status" id="status">3D preview is starting. Load an SVG file.</p>
       </section>
 
@@ -485,9 +526,55 @@
     const $ = id => document.getElementById(id);
     const modelDefaults = { thick: '1', segments: '24' };
     let holeProfiles = [{ color: '#000000', diameter: '1' }];
-    let traceProfiles = [{ color: '#ffd500', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', padWidth: '2', padHeight: '2' }], expandedTraceColorIndex = 0;
+    let traceProfiles = [{ color: '#ffd500', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', padWidth: '2', padHeight: '2', ridgeWidth: '0', ridgeHeight: '0' }], expandedTraceColorIndex = 0;
     const etcherDefaults = { etcherThick: '1', etcherTolerance: '0.1', etcherCell: '3', etcherWall: '0.7' };
     Object.entries({ ...modelDefaults, ...etcherDefaults }).forEach(([id, value]) => $(id).value = value);
+    const settingValueIds = ['widthCm', 'heightCm', 'thick', 'segments', 'edgeColor', 'etcherThick', 'etcherTolerance', 'etcherCell', 'etcherWall'];
+    const settingCheckIds = ['extrudeOnTop', 'mirrorToggle'];
+    function collectSettings() {
+      const values = Object.fromEntries(settingValueIds.map(id => [id, $(id).value]));
+      const checks = Object.fromEntries(settingCheckIds.map(id => [id, $(id).checked]));
+      return {
+        format: 'pcb-etcher-settings',
+        version: 1,
+        values,
+        checks,
+        modelMode: document.querySelector('input[name="modelMode"]:checked').value,
+        infillType: document.querySelector('input[name="infillType"]:checked').value,
+        holeProfiles,
+        traceProfiles,
+        expandedTraceColorIndex
+      };
+    }
+    function applySettings(settings) {
+      if (!settings || settings.format !== 'pcb-etcher-settings') throw new Error('This is not a PCB Etcher settings file.');
+      settingValueIds.forEach(id => { if (typeof settings.values?.[id] === 'string') $(id).value = settings.values[id] });
+      settingCheckIds.forEach(id => { if (typeof settings.checks?.[id] === 'boolean') $(id).checked = settings.checks[id] });
+      if (settings.modelMode === 'pcb' || settings.modelMode === 'etcher') document.querySelector(`input[name="modelMode"][value="${settings.modelMode}"]`).checked = true;
+      if (settings.infillType === 'honeycomb' || settings.infillType === 'solid') document.querySelector(`input[name="infillType"][value="${settings.infillType}"]`).checked = true;
+      if (Array.isArray(settings.holeProfiles) && settings.holeProfiles.length) holeProfiles = settings.holeProfiles;
+      if (Array.isArray(settings.traceProfiles) && settings.traceProfiles.length) traceProfiles = settings.traceProfiles;
+      expandedTraceColorIndex = Math.max(0, Math.min(+settings.expandedTraceColorIndex || 0, traceProfiles.length - 1));
+      mirrored = $('mirrorToggle').checked;
+      const svg = $('svgPreview').querySelector('svg');
+      if (svg) svg.style.transform = mirrored ? 'scaleX(-1)' : '';
+      renderHolePalette();
+      renderTracePalette();
+      updateInfillVisibility();
+      setModelMode();
+      updateExtrudeVisibility();
+      if (svgText) build(true);
+      $('status').textContent = 'Settings loaded.';
+    }
+    function saveSettings() {
+      const blob = new Blob([JSON.stringify(collectSettings(), null, 2)], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'pcb-etcher-settings.json';
+      link.click();
+      URL.revokeObjectURL(link.href);
+      $('status').textContent = 'Settings saved.';
+    }
     // Debounce so typing/spinning a number field doesn't trigger a full SVG-to-geometry
     // rebuild (parsing + polygon boolean ops) on every single keystroke.
     function debounce(fn, wait) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait) } }
@@ -500,9 +587,22 @@
     function updateInfillVisibility() { $('honeycombSettings').hidden = infillType() !== 'honeycomb'; }
     $('widthCm').addEventListener('input', debounce(() => updateDimension('widthCm', 'heightCm'), 150));
     $('heightCm').addEventListener('input', debounce(() => updateDimension('heightCm', 'widthCm'), 150));
+    $('chooseFile').onclick = () => $('file').click();
     $('file').addEventListener('change', e => {
       const f = e.target.files[0]; if (!f) return;
-      const r = new FileReader(); r.onload = () => { svgText = r.result; autoDetectHoleProfiles = true; resetPreviewView(); setInitialDimensions(); renderSvgPreview(); $('status').textContent = 'SVG loaded: ' + f.name; build(true); autoDetectHoleProfiles = false }; r.readAsText(f);
+      const r = new FileReader(); r.onload = () => { svgText = r.result; $('download').disabled = false; autoDetectHoleProfiles = true; resetPreviewView(); setInitialDimensions(); renderSvgPreview(); $('status').textContent = 'SVG loaded: ' + f.name; build(true); autoDetectHoleProfiles = false }; r.readAsText(f);
+    });
+    $('saveSettings').onclick = saveSettings;
+    $('openSettings').onclick = () => $('settingsFile').click();
+    $('settingsFile').addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try { applySettings(JSON.parse(reader.result)) }
+        catch (error) { $('status').textContent = 'Settings could not be loaded: ' + error.message }
+        e.target.value = '';
+      };
+      reader.readAsText(f);
     });
     $('build').onclick = () => build(false);
     $('viewToggle').onclick = () => toggleView();
@@ -512,7 +612,7 @@
     }
     $('mirrorToggle').addEventListener('change', applyMirrorState);
     $('addHoleColor').onclick = () => { holeProfiles.push({ color: '#000000', diameter: '1' }); renderHolePalette(); build(true) };
-    $('addTraceColor').onclick = () => { traceProfiles.push({ color: '#ffd500', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', padWidth: '2', padHeight: '2' }); expandedTraceColorIndex = traceProfiles.length - 1; renderTracePalette(); build(true) };
+    $('addTraceColor').onclick = () => { traceProfiles.push({ color: '#ffd500', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', padWidth: '2', padHeight: '2', ridgeWidth: '0', ridgeHeight: '0' }); expandedTraceColorIndex = traceProfiles.length - 1; renderTracePalette(); build(true) };
     $('download').onclick = () => downloadSTL();
     $('downloadEtcher').onclick = () => downloadEtcherSTL();
     document.querySelectorAll('input[name="modelMode"]').forEach(input => input.onchange = () => setModelMode());
@@ -529,7 +629,7 @@
       palette.replaceChildren();
       traceProfiles.forEach((profile, index) => {
         const row = document.createElement('details'); row.className = 'trace-color-row'; row.open = index === expandedTraceColorIndex;
-        row.innerHTML = `<summary>Traces / pads ${index + 1}<input type="color" data-field="color" aria-label="Trace / pad color ${index + 1}" value="${profile.color}"></summary><div class="trace-color-controls"><label>Trace ${$('extrudeOnTop').checked ? 'height' : 'depth'} (mm) <input type="number" data-field="lineDepth" min="0" step="0.1" value="${profile.lineDepth}"></label><label>Trace width (mm) <input type="number" data-field="lineWidth" min="0.05" step="0.05" value="${profile.lineWidth}"></label><label>Pad ${$('extrudeOnTop').checked ? 'height' : 'depth'} (mm) <input type="number" data-field="circleDepth" min="0" step="0.1" value="${profile.circleDepth}"></label><label>Pad width (mm) <input type="number" data-field="padWidth" min="0.05" step="0.05" value="${profile.padWidth || profile.circleDia || '2'}"></label><label>Pad height (mm) <input type="number" data-field="padHeight" min="0.05" step="0.05" value="${profile.padHeight || profile.circleDia || '2'}"></label>${traceProfiles.length > 1 ? '<button type="button" class="remove-hole-color" title="Remove trace / pad color">&times;</button>' : ''}</div>`;
+        row.innerHTML = `<summary>Traces / pads ${index + 1}<input type="color" data-field="color" aria-label="Trace / pad color ${index + 1}" value="${profile.color}"></summary><div class="trace-color-controls"><label>Trace ${$('extrudeOnTop').checked ? 'height' : 'depth'} (mm) <input type="number" data-field="lineDepth" min="0" step="0.1" value="${profile.lineDepth}"></label><label>Trace width (mm) <input type="number" data-field="lineWidth" min="0.05" step="0.05" value="${profile.lineWidth}"></label><label>Pad ${$('extrudeOnTop').checked ? 'height' : 'depth'} (mm) <input type="number" data-field="circleDepth" min="0" step="0.1" value="${profile.circleDepth}"></label><label>Pad width (mm) <input type="number" data-field="padWidth" min="0.05" step="0.05" value="${profile.padWidth || profile.circleDia || '2'}"></label><label>Pad height (mm) <input type="number" data-field="padHeight" min="0.05" step="0.05" value="${profile.padHeight || profile.circleDia || '2'}"></label><label>Ridge width (mm) <input type="number" data-field="ridgeWidth" min="0" step="0.05" value="${profile.ridgeWidth ?? '0'}"></label><label>Ridge height (mm) <input type="number" data-field="ridgeHeight" min="0" step="0.1" value="${profile.ridgeHeight ?? '0'}"></label>${traceProfiles.length > 1 ? '<button type="button" class="remove-hole-color" title="Remove trace / pad color">&times;</button>' : ''}</div>`;
         row.addEventListener('toggle', () => {
           if (row.open && expandedTraceColorIndex !== index) { expandedTraceColorIndex = index; renderTracePalette(); }
         });
@@ -773,7 +873,7 @@
       const contourBounds = polygonBounds(contour), cx = w / 2 + panX;
       const contourCenter = polygonCenter(contour, W, H);
       const centeredContour = contour.map(point => [point[0] - contourCenter[0], point[1] - contourCenter[1]]);
-      const previewZ = [0, T + (d.extrudeOnTop ? d.extrudeHeight : 0)];
+      const previewZ = [0, T + (d.extrudeOnTop ? d.extrudeHeight : Math.max(0, ...traceData.map(profile => +profile.ridgeHeight || 0)))];
       const sc = fitPreviewScale(centeredContour, previewZ, w, h);
       const cy = topAlignedCenterY(centeredContour, previewZ, h, sc) + panY;
       const top = contour.map(p => proj(p[0] - contourCenter[0], p[1] - contourCenter[1], T, cx, cy, sc));
@@ -808,6 +908,23 @@
           poly(topRing, h.color);
         });
       } else {
+        // Raised ridges around the traces/pads first, so the recess drawing below stays visible.
+        traceData.forEach(profile => {
+          const ridgeHeight = +profile.ridgeHeight || 0;
+          if (!(ridgeHeight > 0)) return;
+          (profile.ridgePolys || []).forEach(rings => {
+            const path = new Path2D();
+            rings.forEach(ring => {
+              ring.forEach((point, index) => {
+                const projected = proj(point[0] - ox - contourCenter[0], point[1] - oy - contourCenter[1], d.t + ridgeHeight, cx, cy, sc);
+                index ? path.lineTo(projected[0], projected[1]) : path.moveTo(projected[0], projected[1]);
+              });
+              path.closePath();
+            });
+            ctx.fillStyle = '#3d9957'; ctx.fill(path, 'evenodd');
+            ctx.strokeStyle = '#1c5a31'; ctx.lineWidth = devicePixelRatio; ctx.stroke(path);
+          });
+        });
         traceData.forEach(profile => {
           profile.profileCircles.forEach(circle => {
             drawPadPocket(circle.x - ox - contourCenter[0], circle.y - oy - contourCenter[1], profile.padWidth / 2, profile.padHeight / 2, d.t + 0.01, d.t - profile.cd, cx, cy, sc, '#1c5a31', '#1c5a31');
@@ -875,6 +992,21 @@
         d.circles.forEach(circle => poly(project(padPolygon({ x: circle.x - ox, y: circle.y - oy, radiusX: Math.max(0.005, d.padWidth / 2 + tolerance), radiusY: Math.max(0.005, d.padHeight / 2 + tolerance) })), '#ffb000', '#9a6900'));
       }
       if (d.cd > 0) d.circles.forEach(circle => poly(project(padPolygon({ x: circle.x - ox, y: circle.y - oy, radiusX: Math.max(0.005, d.padWidth / 2 - tolerance), radiusY: Math.max(0.005, d.padHeight / 2 - tolerance) })), '#1769aa', '#0f4e7c'));
+      const etcherData = modelGroup;
+      const ridgeProfiles = (etcherData.traceProfileData || []).filter(pd => (pd.ridgePolys || []).length && pd.ridgeHeight > 0);
+      if (ridgeProfiles.length && !etcherData.extrudeOnTop) {
+        // Ridges on the PCB get a groove in the etcher: draw the slot outline around the
+        // trace recesses so it is visible where the raised rims will sit.
+        ctx.strokeStyle = '#7a3db0'; ctx.lineWidth = Math.max(1.5, 2 * tolerance * sc);
+        ridgeProfiles.forEach(pd => {
+          pd.ridgePolys.forEach(rings => {
+            rings.forEach(ring => {
+              const points = project(ring);
+              ctx.beginPath(); points.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.stroke();
+            });
+          });
+        });
+      }
       d.holes.forEach(hole => poly(project(holePolygon({ ...hole, x: hole.x - ox, y: hole.y - oy, radius: Math.max(0.005, hole.diameter / 2 - tolerance) })), hole.color));
       ctx.fillStyle = '#444'; ctx.font = `${13 * devicePixelRatio}px system-ui`; ctx.fillText('Etcher preview — drag to rotate, Shift-drag to move', 20, 30);
       drawViewCube();
@@ -1312,6 +1444,7 @@
       const t = +$('thick').value, seg = +$('segments').value, ox = d.minX || 0, oy = d.minY || 0;
       const contour = d.contour && d.contour.length >= 3 ? d.contour.map(p => [p[0] - ox, p[1] - oy]) : [[0, 0], [d.W, 0], [d.W, d.H], [0, d.H]];
       const throughHoles = d.holes.map(h => ({ ...h, radius: h.diameter / 2 }));
+      const throughHolePolygons = throughHoles.map(hole => holePolygon(hole));
       const extrudeOnTop = !!$('extrudeOnTop').checked;
       
       // Build profile data: group circles and lines by their trace profile, and compute geometry per profile
@@ -1331,14 +1464,13 @@
         const profileLines = pointLists.filter((_, lineIndex) => d.lineProfileIndices && d.lineProfileIndices[lineIndex] === profileIndex);
         const linePolygons = tracePolygons(profileLines, lw);
         
-        return { ld, cd, padWidth, padHeight, lw, extraHeight, profileCircles, recessCircles, profileLines, linePolygons };
+        return { ld, cd, padWidth, padHeight, lw, extraHeight, ridgeWidth: +profile.ridgeWidth || 0, ridgeHeight: +profile.ridgeHeight || 0, ridgePolys: [], profileCircles, recessCircles, profileLines, linePolygons };
       });
       
       // Use first profile for fallback values
       const firstProfile = profileData[0];
       
       if (extrudeOnTop) {
-        const throughHolePolygons = throughHoles.map(hole => holePolygon(hole));
         const throughHoleBounds = throughHolePolygons.map(ringBounds);
         const baseOverlap = 0.01;
         const overlayLayers = (points, height) => {
@@ -1383,7 +1515,59 @@
         
         layers.push({ z, depth, height: levels[i + 1] - z, shape: makeShape(contour, throughHoles, allActiveCircles, allActiveLines, ox, oy, true) });
       }
-      
+
+      // Ridges: a raised rim around a profile's traces/pads (recessed mode only). The rim is the
+      // area between the trace/pad shapes expanded by the ridge width and the trace/pad shapes of
+      // EVERY profile - so it always runs around traces and pads, never across them. Through-holes
+      // stay open and the board edge clips the rim.
+      const ridgeProfiles = profileData.filter(pd => pd.ridgeWidth > 0 && pd.ridgeHeight > 0 && (pd.profileLines.length || pd.recessCircles.length));
+      if (ridgeProfiles.length) {
+        const allInnerShapes = [];
+        profileData.forEach(pd => {
+          pd.linePolygons.forEach(points => allInnerShapes.push(points));
+          pd.recessCircles.forEach(circle => allInnerShapes.push(padPolygon(circle)));
+        });
+        throughHolePolygons.forEach(points => allInnerShapes.push(points));
+        const contourGlobal = d.contour && d.contour.length >= 3 ? d.contour : [[ox, oy], [ox + d.W, oy], [ox + d.W, oy + d.H], [ox, oy + d.H]];
+        try {
+          // Merge the inner side before the boolean op - feeding polygon-clipping's difference
+          // raw, often tangent/overlapping rings directly is what makes its sweep-line choke on
+          // near-duplicate points (same precaution as the etcher pocket cutting). Keep each
+          // expanded trace/pad as its own subject, otherwise a union of the outer shapes can
+          // erase small ridges and the inner edges between adjacent traces.
+          const mergedInner = unionInBatches(allInnerShapes.map(points => [closeRing(points)]));
+          ridgeProfiles.forEach(pd => {
+            const outerShapes = tracePolygons(pd.profileLines, pd.lw + 2 * pd.ridgeWidth)
+              .concat(pd.recessCircles.map(circle => padPolygon({ x: circle.x, y: circle.y, radiusX: circle.radiusX + pd.ridgeWidth, radiusY: circle.radiusY + pd.ridgeWidth })));
+            const ridgeRings = [];
+            outerShapes.forEach(points => {
+              try {
+                const rings = polygonClipping.intersection(polygonClipping.difference([closeRing(points)], ...mergedInner), [closeRing(contourGlobal)]);
+                rings.forEach(ring => {
+                  if (!ring[0] || ring[0].length < 3) return;
+                  // Zero-area sliver rings (a difference/intersection leftover) extrude to
+                  // zero-volume solids - skip them instead of feeding manifold-3d junk input.
+                  if (polygonArea(ring) < 0.001) return;
+                  ridgeRings.push(ring);
+                });
+              } catch (e) { console.warn('Ridge could not be built for one trace / pad color:', e) }
+            });
+            // Consolidate overlapping ridge pieces before extrusion. Keeping hundreds of
+            // coplanar solids produces valid STL geometry, but some slicers drop narrow
+            // sections where those individual shells touch or overlap.
+            try {
+              pd.ridgePolys = unionInBatches(ridgeRings);
+            } catch (e) {
+              console.warn('Ridge pieces could not be consolidated:', e);
+              pd.ridgePolys = ridgeRings;
+            }
+            pd.ridgePolys.forEach(ring => {
+              layers.push({ z: t, depth: pd.ridgeHeight, height: pd.ridgeHeight, shape: polygonWithHolesShape(ring, ox, oy) });
+            });
+          });
+        } catch (e) { console.warn('Ridge shapes could not be merged:', e) }
+      }
+
       return { ...d, t, ld: firstProfile.ld, cd: firstProfile.cd, padWidth: firstProfile.padWidth, padHeight: firstProfile.padHeight, lw: firstProfile.lw, seg, W: d.W, H: d.H, extrudeOnTop, extrudeHeight: firstProfile.extraHeight, traceProfileData: profileData, layers };
     }
     function build(silent) {
@@ -1619,6 +1803,7 @@
       const ox = d.minX || 0, oy = d.minY || 0, W = d.W, H = d.H;
       const contour = d.contour && d.contour.length >= 3 ? d.contour.map(point => [point[0] - ox, point[1] - oy]) : [[0, 0], [W, 0], [W, H], [0, H]];
       const layers = [];
+      let basePolygons;
       const lineWidth = Math.max(0.01, d.lw - 2 * tolerance);
       const contactCircles = d.circles.map(circle => ({ x: circle.x - ox, y: circle.y - oy, radius: Math.max(d.padWidth, d.padHeight) / 2 }));
       const localHoles = d.holes.map(hole => ({ ...hole, x: hole.x - ox, y: hole.y - oy }));
@@ -1628,7 +1813,7 @@
       // Every solid part of the etcher block itself (perimeter, infill, support struts),
       // collected as flat polygons instead of extruded right away, so "extrude on top" mode
       // below can cut a pocket into just their top slice instead of extruding immediately.
-      const basePolygons = strokedPolygons([contour.concat([contour[0]])], wallWidth);
+      basePolygons = strokedPolygons([contour.concat([contour[0]])], wallWidth);
       if (infillType() === 'honeycomb') {
         basePolygons.push(...honeycombPolygons(contour, cellSize, wallWidth));
         basePolygons.push(...honeycombConnectors(contour, cellSize, wallWidth, contactCircles, localHoles, extended));
@@ -1636,6 +1821,47 @@
         basePolygons.push(...solidPolygons(contour));
       }
       basePolygons.push(...supportPolygons(extended, junctions, contour, { ...d, circles: contactCircles, holes: localHoles }));
+      // Ridges on the PCB (raised rims around recessed traces/pads) need a matching groove
+      // in the etcher, or the board can't lie flat in it. Cut a slot - ridge shape expanded
+      // by the etcher tolerance, as deep as the highest ridge - into the top of every base
+      // piece that is near one. Same bbox-filtered local-cut pattern as the pocket cutting
+      // below, so distant honeycomb pieces skip the boolean op entirely.
+      const ridgeSources = (d.traceProfileData || []).filter(pd => (pd.ridgePolys || []).length && pd.ridgeHeight > 0);
+      if (ridgeSources.length && !d.extrudeOnTop) {
+        const grooveDepth = Math.min(Math.max(...ridgeSources.map(pd => pd.ridgeHeight)), etcherThick);
+        const grooveBaseHeight = etcherThick - grooveDepth;
+        let rawGrooveShapes = [];
+        ridgeSources.forEach(pd => {
+          pd.ridgePolys.forEach(rings => {
+            const outer = rings[0].map(point => [point[0] - ox, point[1] - oy]);
+            // Widen the groove outward by the tolerance: expanding an arbitrary ring inward
+            // can flip it inside-out, so only the outer boundary grows; hole edges stay put
+            // (the slot ends up slightly generous, which is exactly what a fit-groove needs).
+            rawGrooveShapes.push(...clipToContour(tracePolygons([outer.concat([outer[0]])], tolerance * 2), contour));
+          });
+        });
+        if (rawGrooveShapes.length) {
+          const grooveBoxes = rawGrooveShapes.map(ringBounds);
+          const cutPolygons = [];
+          basePolygons.forEach(points => {
+            const pieceBounds = ringBounds(points);
+            const nearby = rawGrooveShapes.filter((shape, i) => boundsOverlap(pieceBounds, grooveBoxes[i]));
+            if (!nearby.length) return;
+            try {
+              const mergedNearby = unionInBatches(nearby.map(shape => [closeRing(shape)]));
+              const cut = polygonClipping.difference([closeRing(points)], ...mergedNearby);
+              cut.forEach(rings => { if (rings[0] && rings[0].length >= 3) cutPolygons.push(rings) });
+            } catch (e) {
+              // A groove cut that fails (rare sweep-line precision failure) shouldn't block
+              // the export - keep that piece solid rather than dropping it.
+              console.warn('Etcher ridge groove cut failed for one base piece, keeping it solid:', e);
+            }
+          });
+          // Replace the base by: full-height pieces with the grooves carved out of them,
+          // plus floor pieces at the groove bottoms.
+          basePolygons = cutPolygons.map(rings => ({ rings, floor: polygonWithHolesLayer(rings, grooveBaseHeight, 0) }));
+        }
+      }
       if (d.extrudeOnTop && Number.isFinite(d.extrudeHeight) && d.extrudeHeight > 0) {
         // The PCB's traces/circles stick up above its surface in this mode, so instead of
         // adding a matching plug on top of the etcher (which would collide with them), carve
@@ -1688,7 +1914,15 @@
         if (d.ld > 0) {
           etcherLinePolygons(extended, lineWidth, junctions).forEach(points => layers.push(polygonLayer(points, d.ld, etcherThick)));
         }
-        basePolygons.forEach(points => layers.push(polygonLayer(points, etcherThick, 0)));
+        if (basePolygons.length && basePolygons[0] && basePolygons[0].rings) {
+          // Groove-cut pieces: carved slab at full height + a floor at the groove bottom.
+          basePolygons.forEach(entry => {
+            layers.push(polygonWithHolesLayer(entry.rings, etcherThick, 0));
+            layers.push(entry.floor);
+          });
+        } else {
+          basePolygons.forEach(points => layers.push(polygonLayer(points, etcherThick, 0)));
+        }
         const padRadiusX = Math.max(0.005, d.padWidth / 2 - tolerance), padRadiusY = Math.max(0.005, d.padHeight / 2 - tolerance);
         if (d.cd > 0) d.circles.forEach(circle => layers.push(polygonLayer(padPolygon({ x: circle.x - ox, y: circle.y - oy, radiusX: padRadiusX, radiusY: padRadiusY }), d.cd, etcherThick)));
       }
@@ -1699,9 +1933,16 @@
       return layers;
     }
     function shapeToManifold(CrossSection, shape, height, z, seg) {
-      const outerPts = shape.getPoints().map(p => [p.x, p.y]);
+      // CrossSection's 'Positive' fill rule only keeps CCW-wound rings. polygon-clipping
+      // hands difference/intersection results back with CW-wound holes; passing those
+      // straight in makes the holes CrossSection empty, so the subtract below silently
+      // becomes a no-op and the extruded solid fills the holes (e.g. a ridge rim covering
+      // the very pads/traces it is supposed to surround). Normalize everything to CCW.
+      const signedArea = pts => { let a = 0; for (let i = 0; i < pts.length; i++) { const j = (i + 1) % pts.length; a += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1] } return a / 2 };
+      const ccw = pts => signedArea(pts) < 0 ? pts.slice().reverse() : pts;
+      const outerPts = ccw(shape.getPoints().map(p => [p.x, p.y]));
       const outerCS = new CrossSection([outerPts], 'Positive');
-      const holePolys = shape.holes.map(h => h.getPoints(seg).map(p => [p.x, p.y]));
+      const holePolys = shape.holes.map(h => ccw(h.getPoints(seg).map(p => [p.x, p.y])));
       let cs = outerCS;
       if (holePolys.length) {
         const holesCS = new CrossSection(holePolys, 'Positive');

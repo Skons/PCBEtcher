@@ -384,6 +384,7 @@
 </head>
 
 <body>
+  <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "2c3455bc75174cb9b304520b9b3878c0"}'></script><!-- End Cloudflare Web Analytics -->
   <header>
     <div class="header-title">
       <h1>PCB Etcher</h1>
@@ -434,6 +435,11 @@
         off, this adds a raised rim of the given width and height around that color's traces and pads. The rim
         always runs around the traces and pads, never across them; through-holes stay open. Set the width or
         height to 0 for no rim.</p>
+      <p><strong>Overhang</strong> (per trace / pad color): extends that color's ridge inward over its traces only
+        (never over pads, even where a trace runs straight into one), narrowing the open channel above the trace.
+        It floats above the recessed trace, attached only to the ridge on both sides, and can never be wider than
+        half the trace width (so both sides can never overlap). Setting an overhang on any color disables the
+        Etcher model, since the etch template cannot support this floating shape.</p>
 
       <h2>Model — Etcher</h2>
       <p>Generates a template shape to hold the PCB in and etch it. It consists of an outer wall on the outline, a base
@@ -526,7 +532,7 @@
     const $ = id => document.getElementById(id);
     const modelDefaults = { thick: '1', segments: '24' };
     let holeProfiles = [{ color: '#000000', diameter: '1' }];
-    let traceProfiles = [{ color: '#ffd500', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', padWidth: '2', padHeight: '2', ridgeWidth: '0', ridgeHeight: '0' }], expandedTraceColorIndex = 0;
+    let traceProfiles = [{ color: '#ffd500', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', padWidth: '2', padHeight: '2', ridgeWidth: '0', ridgeHeight: '0', overhang: '0' }], expandedTraceColorIndex = 0;
     const etcherDefaults = { etcherThick: '1', etcherTolerance: '0.1', etcherCell: '3', etcherWall: '0.7' };
     Object.entries({ ...modelDefaults, ...etcherDefaults }).forEach(([id, value]) => $(id).value = value);
     const settingValueIds = ['widthCm', 'heightCm', 'thick', 'segments', 'edgeColor', 'etcherThick', 'etcherTolerance', 'etcherCell', 'etcherWall'];
@@ -612,7 +618,7 @@
     }
     $('mirrorToggle').addEventListener('change', applyMirrorState);
     $('addHoleColor').onclick = () => { holeProfiles.push({ color: '#000000', diameter: '1' }); renderHolePalette(); build(true) };
-    $('addTraceColor').onclick = () => { traceProfiles.push({ color: '#ffd500', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', padWidth: '2', padHeight: '2', ridgeWidth: '0', ridgeHeight: '0' }); expandedTraceColorIndex = traceProfiles.length - 1; renderTracePalette(); build(true) };
+    $('addTraceColor').onclick = () => { traceProfiles.push({ color: '#ffd500', lineDepth: '0.5', lineWidth: '0.8', circleDepth: '0.5', padWidth: '2', padHeight: '2', ridgeWidth: '0', ridgeHeight: '0', overhang: '0' }); expandedTraceColorIndex = traceProfiles.length - 1; renderTracePalette(); build(true) };
     $('download').onclick = () => downloadSTL();
     $('downloadEtcher').onclick = () => downloadEtcherSTL();
     document.querySelectorAll('input[name="modelMode"]').forEach(input => input.onchange = () => setModelMode());
@@ -623,19 +629,31 @@
     $('helpOverlay').addEventListener('click', e => { if (e.target === $('helpOverlay')) $('helpOverlay').hidden = true });
     renderHolePalette();
     renderTracePalette();
+    updateEtcherAvailability();
+
+    function updateEtcherAvailability() {
+      const hasOverhang = traceProfiles.some(profile => +profile.overhang > 0);
+      const etcherRadio = document.querySelector('input[name="modelMode"][value="etcher"]');
+      etcherRadio.disabled = hasOverhang;
+      etcherRadio.closest('label').title = hasOverhang ? 'Etcher is not available while an overhang is set on a trace / pad color.' : '';
+      if (hasOverhang && etcherRadio.checked) {
+        document.querySelector('input[name="modelMode"][value="pcb"]').checked = true;
+        setModelMode();
+      }
+    }
 
     function renderTracePalette() {
       const palette = $('tracePalette');
       palette.replaceChildren();
       traceProfiles.forEach((profile, index) => {
         const row = document.createElement('details'); row.className = 'trace-color-row'; row.open = index === expandedTraceColorIndex;
-        row.innerHTML = `<summary>Traces / pads ${index + 1}<input type="color" data-field="color" aria-label="Trace / pad color ${index + 1}" value="${profile.color}"></summary><div class="trace-color-controls"><label>Trace ${$('extrudeOnTop').checked ? 'height' : 'depth'} (mm) <input type="number" data-field="lineDepth" min="0" step="0.1" value="${profile.lineDepth}"></label><label>Trace width (mm) <input type="number" data-field="lineWidth" min="0.05" step="0.05" value="${profile.lineWidth}"></label><label>Pad ${$('extrudeOnTop').checked ? 'height' : 'depth'} (mm) <input type="number" data-field="circleDepth" min="0" step="0.1" value="${profile.circleDepth}"></label><label>Pad width (mm) <input type="number" data-field="padWidth" min="0.05" step="0.05" value="${profile.padWidth || profile.circleDia || '2'}"></label><label>Pad height (mm) <input type="number" data-field="padHeight" min="0.05" step="0.05" value="${profile.padHeight || profile.circleDia || '2'}"></label><label>Ridge width (mm) <input type="number" data-field="ridgeWidth" min="0" step="0.05" value="${profile.ridgeWidth ?? '0'}"></label><label>Ridge height (mm) <input type="number" data-field="ridgeHeight" min="0" step="0.1" value="${profile.ridgeHeight ?? '0'}"></label>${traceProfiles.length > 1 ? '<button type="button" class="remove-hole-color" title="Remove trace / pad color">&times;</button>' : ''}</div>`;
+        row.innerHTML = `<summary>Traces / pads ${index + 1}<input type="color" data-field="color" aria-label="Trace / pad color ${index + 1}" value="${profile.color}"></summary><div class="trace-color-controls"><label>Trace ${$('extrudeOnTop').checked ? 'height' : 'depth'} (mm) <input type="number" data-field="lineDepth" min="0" step="0.1" value="${profile.lineDepth}"></label><label>Trace width (mm) <input type="number" data-field="lineWidth" min="0.05" step="0.05" value="${profile.lineWidth}"></label><label>Pad ${$('extrudeOnTop').checked ? 'height' : 'depth'} (mm) <input type="number" data-field="circleDepth" min="0" step="0.1" value="${profile.circleDepth}"></label><label>Pad width (mm) <input type="number" data-field="padWidth" min="0.05" step="0.05" value="${profile.padWidth || profile.circleDia || '2'}"></label><label>Pad height (mm) <input type="number" data-field="padHeight" min="0.05" step="0.05" value="${profile.padHeight || profile.circleDia || '2'}"></label><label>Ridge width (mm) <input type="number" data-field="ridgeWidth" min="0" step="0.05" value="${profile.ridgeWidth ?? '0'}"></label><label>Ridge height (mm) <input type="number" data-field="ridgeHeight" min="0" step="0.1" value="${profile.ridgeHeight ?? '0'}"></label><label title="Extends the ridge inward over the trace only (never over pads), up to half the trace width. Disables Etcher mode.">Overhang (mm) <input type="number" data-field="overhang" min="0" step="0.05" max="${profile.lineWidth / 2}" value="${profile.overhang ?? '0'}"></label>${traceProfiles.length > 1 ? '<button type="button" class="remove-hole-color" title="Remove trace / pad color">&times;</button>' : ''}</div>`;
         row.addEventListener('toggle', () => {
           if (row.open && expandedTraceColorIndex !== index) { expandedTraceColorIndex = index; renderTracePalette(); }
         });
         row.querySelectorAll('input').forEach(input => {
           const field = input.dataset.field;
-          input.addEventListener('input', () => { traceProfiles[index][field] = input.value; build(true); });
+          input.addEventListener('input', () => { traceProfiles[index][field] = input.value; updateEtcherAvailability(); build(true); });
         });
         row.querySelector('.remove-hole-color')?.addEventListener('click', () => {
           traceProfiles.splice(index, 1);
@@ -645,6 +663,7 @@
         });
         palette.appendChild(row);
       });
+      updateEtcherAvailability();
     }
 
     function renderHolePalette() {
@@ -923,6 +942,19 @@
             });
             ctx.fillStyle = '#3d9957'; ctx.fill(path, 'evenodd');
             ctx.strokeStyle = '#1c5a31'; ctx.lineWidth = devicePixelRatio; ctx.stroke(path);
+          });
+          // Overhang roof: floats above the trace at the ridge's height, attached only at the ridge.
+          (profile.overhangPolys || []).forEach(rings => {
+            const path = new Path2D();
+            rings.forEach(ring => {
+              ring.forEach((point, index) => {
+                const projected = proj(point[0] - ox - contourCenter[0], point[1] - oy - contourCenter[1], d.t + ridgeHeight, cx, cy, sc);
+                index ? path.lineTo(projected[0], projected[1]) : path.moveTo(projected[0], projected[1]);
+              });
+              path.closePath();
+            });
+            ctx.fillStyle = 'rgba(122,61,176,0.65)'; ctx.fill(path, 'evenodd');
+            ctx.strokeStyle = '#5a2c85'; ctx.lineWidth = devicePixelRatio; ctx.stroke(path);
           });
         });
         traceData.forEach(profile => {
@@ -1464,7 +1496,8 @@
         const profileLines = pointLists.filter((_, lineIndex) => d.lineProfileIndices && d.lineProfileIndices[lineIndex] === profileIndex);
         const linePolygons = tracePolygons(profileLines, lw);
         
-        return { ld, cd, padWidth, padHeight, lw, extraHeight, ridgeWidth: +profile.ridgeWidth || 0, ridgeHeight: +profile.ridgeHeight || 0, ridgePolys: [], profileCircles, recessCircles, profileLines, linePolygons };
+        const overhang = Math.min(Math.max(+profile.overhang || 0, 0), lw / 2);
+        return { ld, cd, padWidth, padHeight, lw, extraHeight, ridgeWidth: +profile.ridgeWidth || 0, ridgeHeight: +profile.ridgeHeight || 0, overhang, ridgePolys: [], overhangPolys: [], profileCircles, recessCircles, profileLines, linePolygons };
       });
       
       // Use first profile for fallback values
@@ -1564,6 +1597,31 @@
             pd.ridgePolys.forEach(ring => {
               layers.push({ z: t, depth: pd.ridgeHeight, height: pd.ridgeHeight, shape: polygonWithHolesShape(ring, ox, oy) });
             });
+            // Overhang: extends the ridge inward, over the trace only (never over pads), narrowing
+            // the open channel above it. It is a thin roof at the ridge's height/z, floating above
+            // the (lower, recessed) trace floor and attached only where it meets the ridge on both
+            // sides - so it is never wider than the trace itself.
+            if (pd.overhang > 0 && pd.profileLines.length) {
+              const innerWidth = Math.max(0, pd.lw - 2 * pd.overhang);
+              try {
+                const outerRoof = unionInBatches(pd.linePolygons.map(points => [closeRing(points)]));
+                const innerRoof = innerWidth > 0.001 ? unionInBatches(tracePolygons(pd.profileLines, innerWidth).map(points => [closeRing(points)])) : [];
+                let roofRings = innerRoof.length ? polygonClipping.difference(outerRoof, ...innerRoof) : outerRoof;
+                // Keep the overhang off every pad's footprint (and its ridge) so it never
+                // bridges over a pad, even where a trace runs straight into one.
+                const padKeepouts = pd.recessCircles.map(circle => padPolygon({ x: circle.x, y: circle.y, radiusX: circle.radiusX + pd.ridgeWidth, radiusY: circle.radiusY + pd.ridgeWidth }));
+                if (padKeepouts.length) roofRings = polygonClipping.difference(roofRings, ...padKeepouts.map(points => [closeRing(points)]));
+                roofRings = polygonClipping.intersection(roofRings, [closeRing(contourGlobal)]);
+                if (throughHolePolygons.length) roofRings = polygonClipping.difference(roofRings, ...throughHolePolygons.map(hole => [closeRing(hole)]));
+                pd.overhangPolys = unionInBatches(roofRings.filter(ring => ring[0] && ring[0].length >= 3 && polygonArea(ring) > 0.001));
+              } catch (e) {
+                console.warn('Overhang could not be built for one trace / pad color:', e);
+                pd.overhangPolys = [];
+              }
+              pd.overhangPolys.forEach(ring => {
+                layers.push({ z: t, depth: pd.ridgeHeight, height: pd.ridgeHeight, shape: polygonWithHolesShape(ring, ox, oy) });
+              });
+            }
           });
         } catch (e) { console.warn('Ridge shapes could not be merged:', e) }
       }

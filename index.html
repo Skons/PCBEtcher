@@ -73,50 +73,6 @@
       padding: 8px 10px
     }
 
-    #helpOverlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, .45);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 100
-    }
-
-    #helpOverlay[hidden] {
-      display: none
-    }
-
-    #helpPanel {
-      background: white;
-      max-width: 560px;
-      width: 90%;
-      max-height: 80vh;
-      overflow: auto;
-      padding: 22px 26px;
-      border-radius: 10px;
-      position: relative
-    }
-
-    #helpPanel h2 {
-      font-size: 15px;
-      margin: 16px 0 4px
-    }
-
-    #helpPanel h2:first-of-type {
-      margin-top: 0
-    }
-
-    #helpPanel p {
-      font-size: 13px;
-      line-height: 1.5;
-      margin: 4px 0
-    }
-
-    #helpClose {
-      float: right
-    }
-
     h1 {
       margin: 0;
       font-size: 22px
@@ -409,58 +365,6 @@
       </div>
     </div>
   </header>
-  <div id="helpOverlay" hidden>
-    <div id="helpPanel">
-      <button class="secondary" id="helpClose" type="button">Close</button>
-      <h2>What does this tool do?</h2>
-      <p>You load an SVG of a PCB design. From that, the tool builds a 3D model: either the <strong>PCB itself</strong>
-        with recessed or raised traces and pads, or an <strong>etch template</strong> that fits around the PCB.</p>
-
-      <h2>SVG</h2>
-      <p>Load the source file here. The colors in the SVG determine what counts as traces, pads and holes (see the
-        Colors section).</p>
-
-      <h2>Colors</h2>
-      <p><strong>Outer edge</strong>: color of the outer outline of the PCB. <strong>Traces / pads</strong>: color of
-        the traces and pads. Add a trace / pad color for each SVG color that needs its own trace width, trace
-        depth or height, pad diameter, or pad depth or height. <strong>Hole colors</strong>: link colors to holes
-        with a diameter, for through-holes in the PCB.</p>
-
-      <h2>Model — PCB</h2>
-      <p>Set the PCB width or height to scale the model while preserving its proportions. <strong>Total thickness</strong>
-        controls the board thickness. With <strong>Extrude traces / pads</strong> off, traces and pads are
-        recessed grooves in the PCB; their values are depths. With it on, they are raised above the PCB; their values
-        are heights. <strong>Mirror</strong> flips the generated PCB and the original SVG view.</p>
-      <p><strong>Ridge width / Ridge height</strong> (per trace / pad color): with <strong>Extrude traces / pads</strong>
-        off, this adds a raised rim of the given width and height around that color's traces and pads. The rim
-        always runs around the traces and pads, never across them; through-holes stay open. Set the width or
-        height to 0 for no rim.</p>
-      <p><strong>Overhang</strong> (per trace / pad color): extends that color's ridge inward over its traces only
-        (never over pads, even where a trace runs straight into one), narrowing the open channel above the trace.
-        It floats above the recessed trace, attached only to the ridge on both sides, and can never be wider than
-        half the trace width (so both sides can never overlap). Setting an overhang on any color disables the
-        Etcher model, since the etch template cannot support this floating shape.</p>
-
-      <h2>Model — Etcher</h2>
-      <p>Generates a template shape to hold the PCB in and etch it. It consists of an outer wall on the outline, a base
-        layer (infill), and raised borders around traces/pads/holes that act as an etch mask.</p>
-      <p><strong>Base infill – Honeycomb</strong>: the base layer is filled with a lightweight honeycomb pattern (less
-        material, prints faster). Always stays within the outer edge.</p>
-      <p><strong>Base infill – Solid</strong>: the base layer is one solid slab, with no pattern. Sturdier, but uses
-        more material.</p>
-      <p><strong>Etcher thickness</strong>: thickness of the base layer. <strong>Etcher tolerance</strong>: how much
-        extra room the recesses for traces/pads/holes get compared to the PCB design, so the PCB fits in easily.
-        <strong>Cell size / wall width</strong>: size and wall thickness of the honeycomb cells (Honeycomb only).
-      </p>
-
-      <h2>Mesh</h2>
-      <p><strong>Arc segment resolution</strong>: how many segments round shapes (pads/holes) get — higher is
-        smoother but heavier to render. The fixed top bar keeps <strong>Refresh 3D</strong>, <strong>View original SVG</strong>,
-        <strong>Download PCB STL</strong> or <strong>Download etcher STL</strong>, and <strong>Reset settings</strong> available
-        while you scroll. Refresh rebuilds the model after changes; download exports the active model as a
-        3D-printable STL file.</p>
-    </div>
-  </div>
   <main>
     <aside>
       <section>
@@ -624,9 +528,9 @@
     document.querySelectorAll('input[name="modelMode"]').forEach(input => input.onchange = () => setModelMode());
     document.querySelectorAll('input[name="infillType"]').forEach(input => input.onchange = () => { updateInfillVisibility(); drawPreview() });
     updateInfillVisibility();
-    $('helpBtn').onclick = () => { $('helpOverlay').hidden = false };
-    $('helpClose').onclick = () => { $('helpOverlay').hidden = true };
-    $('helpOverlay').addEventListener('click', e => { if (e.target === $('helpOverlay')) $('helpOverlay').hidden = true });
+    // Help lives in the project README on GitHub
+    const HELP_URL = 'https://github.com/Skons/PCBEtcher#readme';
+    $('helpBtn').onclick = () => window.open(HELP_URL, '_blank', 'noopener');
     renderHolePalette();
     renderTracePalette();
     updateEtcherAvailability();
@@ -1737,7 +1641,7 @@
       return (first[0] === last[0] && first[1] === last[1]) ? points : points.concat([first]);
     }
     function clipToContour(points, contour) {
-      // Intersecting every tiny honeycomb/support piece against the full contour ring is by
+      // Intersecting every tiny honeycomb/support piece aga532inst the full contour ring is by
       // far the most expensive part of building the etcher for boards with a detailed
       // (many-point, e.g. curve-sampled) outline - with thousands of small pieces this adds
       // up to minutes. Most pieces sit well inside the board, nowhere near its edge, and so
